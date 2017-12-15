@@ -1,0 +1,7 @@
+stack "s" (STACK_OK) [0x7fc82ec02a00] {
+	current = 3
+
+	elements[0]: 9
+	elements[1]: 9
+	elements[2]: 5
+}

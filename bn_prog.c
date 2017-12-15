@@ -6,7 +6,7 @@ int main()
 {
 	bn* a = bn_new();
 	bn* b = bn_new();
-	bn_init_int(a, 999);
+	bn_init_int(a, -1230123123);
 	bn_init_int(b, 123);
 	bn_div_to(a, b);
 	
