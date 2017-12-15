@@ -436,7 +436,6 @@ int bn_add_to(bn *t, bn const *right)
 			tmp[i] = t->body[i];
 		free(t->body);
 		t->body = tmp;
-		
 	}
 	return 0;
 }
