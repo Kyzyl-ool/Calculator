@@ -1,5 +1,5 @@
 #define DEFAULT_SIZE 8
-#define DEBUG
+//~ #define DEBUG
 
 #include <math.h>
 #include <stdlib.h>
@@ -698,7 +698,7 @@ int bn_mul_to(bn *t, bn const *right)
 	return 0;
 }
 
-int bn_div_to(bn *t, bn const *right)
+int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО ДЕЛЕНИЕ ПРИ ОТРИЦАТЕЛЬНЫЗ ЧИСТАХ НЕ ВСЕГДА РАБАОТЕТ
 {
 	//Деление столбиком
 	
@@ -726,7 +726,10 @@ int bn_div_to(bn *t, bn const *right)
 				//сформировать результат
 				//оптимизация памяти
 			
-	
+	if (right->sign == 0)
+	{
+		return -1;
+	}
 	
 	int sign_result = t->sign * right->sign;
 	if (right->bodysize > t->bodysize)
@@ -823,9 +826,11 @@ int bn_div_to(bn *t, bn const *right)
 						}
 						if (placed > 1)
 							stack_Push(s, 0);
+						bn_delete(tmp);
 					}
 					if (st->current == 0 && placed > 0 && bn_cmp(x, abs_right) == -1) stack_Push(s, 0);
 					//~ _RED_DUMP(x);
+					bn_delete(premul);
 				}
 				free(t->body);
 				t->amount_of_allocated_blocks = (int)trunc(s->current / DEFAULT_SIZE) + 1;
@@ -843,10 +848,16 @@ int bn_div_to(bn *t, bn const *right)
 				
 				stack_Destroy(st);
 				stack_Destroy(s);
+				bn_delete(x);
 				break;
 			}
 			default: assert(0);
 		}
+		bn_delete(abs_t);
+		bn_delete(abs_right);
+		bn_delete(ten);
+		bn_delete(one);
+		
 	}
 	
 	return 0;
@@ -855,7 +866,12 @@ int bn_div_to(bn *t, bn const *right)
 int bn_mod_to(bn *t, bn const *right)
 {
 	//испльзуя предыдущую функцию, вычислить остаток от деления
+	bn* tmp = bn_init(t);
+	bn_div_to(tmp, right);
+	bn_mul_to(tmp, right);
+	bn_sub_to(t, tmp);
 	
+	bn_delete(tmp);
 	return 0;
 }
 
@@ -863,7 +879,18 @@ int bn_mod_to(bn *t, bn const *right)
 int bn_pow_to(bn *t, int degree)
 {
 	//Бинарное возведение в степень
-	
+	bn* result = bn_new();
+	bn_init_int(result, 1);
+	int pow = degree;
+	while (pow > 0)
+	{
+		if (pow % 2 == 1)
+			bn_mul_to(result, t);
+		bn_mul_to(t, t);
+		pow /= 2;
+	}
+	bn_delete(t);
+	t = bn_init(result);
 	return 0;
 }
 
@@ -876,27 +903,39 @@ int bn_root_to(bn *t, int reciprocal)
 // Аналоги операций x = l+r (l-r, l*r, l/r, l%r)
 bn* bn_add(bn const *left, bn const *right)
 {
-	return NULL;
+	bn* result = bn_new();
+	bn_add_to(result, left);
+	bn_add_to(result, right);
+	return result;
 }
 
 bn* bn_sub(bn const *left, bn const *right)
 {
-	return NULL;
+	bn* result = bn_new();
+	bn_add_to(result, left);
+	bn_sub_to(result, right);
+	return result;
 }
 
 bn* bn_mul(bn const *left, bn const *right)
 {
-	return NULL;
+	bn* result = bn_init(left);
+	bn_mul_to(result, right);
+	return result;
 }
 
 bn* bn_div(bn const *left, bn const *right)
 {
-	return NULL;
+	bn* result = bn_init(left);
+	bn_div_to(result, right);
+	return result;
 }
 
 bn* bn_mod(bn const *left, bn const *right)
 {
-	return NULL;
+	bn* result = bn_init(left);
+	bn_mod_to(result, right);
+	return result;
 }
 
 // Выдать представление BN в системе счисления radix в виде строки
