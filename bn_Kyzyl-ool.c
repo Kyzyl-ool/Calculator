@@ -745,7 +745,7 @@ int bn_div_to(bn *t, bn const *right)
 		bn* one = bn_new();
 		bn_init_int(one, 1);
 		
-		switch (bn_cmp(t, right))
+		switch (bn_cmp(abs_t, abs_right))
 		{
 			case -1:
 			{
@@ -757,6 +757,7 @@ int bn_div_to(bn *t, bn const *right)
 			{
 				bn_delete(t);
 				t = bn_init(one);
+				t->sign = sign_result;	
 				break;
 			}
 			case 1:
@@ -800,6 +801,7 @@ int bn_div_to(bn *t, bn const *right)
 					}
 					//~ printf("digit: %d\n", digit);
 					stack_Push(s, digit);
+					
 					bn_sub_to(x, premul);
 				
 					//~ _RED_DUMP(x);
@@ -807,15 +809,14 @@ int bn_div_to(bn *t, bn const *right)
 					while (st->current > 0 && bn_cmp(x, abs_right) == -1)
 					{
 						bn* tmp = bn_new();
-						int tmp2 = stack_Pop(st);
+						bn_init_int(tmp, stack_Pop(st));
 						
-						if (tmp2 == 0)
+						if (tmp->sign == 0 && x->sign == 0)
 						{
 							stack_Push(s, 0);
 						}
 						else
 						{
-							bn_init_int(tmp, tmp2);
 							bn_mul_to(x, ten);
 							bn_add_to(x, tmp);
 							placed++;
@@ -823,9 +824,9 @@ int bn_div_to(bn *t, bn const *right)
 						if (placed > 1)
 							stack_Push(s, 0);
 					}
+					if (st->current == 0 && placed > 0 && bn_cmp(x, abs_right) == -1) stack_Push(s, 0);
 					//~ _RED_DUMP(x);
 				}
-				
 				free(t->body);
 				t->amount_of_allocated_blocks = (int)trunc(s->current / DEFAULT_SIZE) + 1;
 				t->body = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
@@ -843,65 +844,6 @@ int bn_div_to(bn *t, bn const *right)
 				stack_Destroy(st);
 				stack_Destroy(s);
 				break;
-				
-
-						
-				
-				
-				//~ stack* s = stack_Construct(t->bodysize);
-				//~ int j = 0;
-				//~ for (int k = 0; k < abs_t->bodysize - x->bodysize; k++)
-				//~ {
-					//~ bn* premul = bn_init(abs_right);
-					//~ bn* i = bn_new();
-					//~ bn_init_int(i, 1);
-					
-					//~ while (bn_cmp(x, premul) == 1)
-					//~ {
-						//~ bn_add_to(premul, abs_right);
-						//~ bn_add_to(i, one);
-					//~ }
-					//~ if (bn_cmp(x, premul) == -1)
-					//~ {
-						//~ bn_sub_to(i, one);
-						//~ bn_sub_to(premul, abs_right);
-					//~ }
-					
-					//~ stack_Push(s, i->body[0]);
-					//~ j++;
-					//~ bn_sub_to(x, premul);
-				//~ }
-				//~ if (j == 0)
-				//~ {
-					//~ bn* premul = bn_init(abs_right);
-					//~ bn* i = bn_new();
-					//~ bn_init_int(i, 1);
-					
-					//~ while (bn_cmp(x, premul) == 1)
-					//~ {
-						//~ bn_add_to(premul, abs_right);
-						//~ bn_add_to(i, one);
-					//~ }
-					//~ if (bn_cmp(x, premul) == -1)
-					//~ {
-						//~ bn_sub_to(i, one);
-						//~ bn_sub_to(premul, abs_right);
-					//~ }
-					
-					//~ stack_Push(s, i->body[0]);
-					//~ j++;
-				//~ }
-				
-				//~ body_t* result = (body_t* )calloc(abs_t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t)); //частное
-				//~ for (int i = 0; i < j; i++)
-					//~ result[i] = stack_Pop(s);
-				
-				//~ stack_Destroy(s);
-				
-				//~ free(t->body);
-				//~ t->body = result;
-				//~ t->sign = sign_result;
-				//~ break;
 			}
 			default: assert(0);
 		}
