@@ -7,13 +7,13 @@
 #endif
 
 #define DEFAULT_SIZE 64
-#define DEBUG
+//~ #define DEBUG
 #define _RED_DUMP(the_bn) printf("\033[1;31m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _GREEN_DUMP(the_bn) printf("\033[1;32m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _BEEP printf("\a")
 #define _BN_ASSERT(the_bn) assert(the_bn); assert(the_bn->body)
 #define _NO_BN(the_bn) !the_bn || !the_bn->body
-#define _BN_STABILIZE(t) { for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++){if (t->body[i] > 9) { t->body[i+1] += t->body[i] / 10; t->body[i] %= 10; } while (t->body[i] < 0) { t->body[i] += 10; t->body[i+1]--; } } t->bodysize = 0; for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++) { if (t->body[i] != 0) t->bodysize = i + 1; } if (t->bodysize == 0) t->sign = 0;}
+#define _BN_STABILIZE(t) for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++){if (t->body[i] > 9) { t->body[i+1] += t->body[i] / 10; t->body[i] %= 10; } while (t->body[i] < 0) { t->body[i] += 10; t->body[i+1]--; } } t->bodysize = 0; for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++) { if (t->body[i] != 0) t->bodysize = i + 1; } if (t->bodysize == 0) t->sign = 0
 
 #define POISON 999999999999999.9999999999999
 #define KANAR 771
@@ -62,8 +62,8 @@ stack* stack_Construct(int amount_of_elements)
 	#ifdef DEBUG
 	assert(amount_of_elements);
 	#endif
-	stack* s = (stack* )calloc(1, sizeof(stack));
-	s->elements = (stack_elem* )calloc(amount_of_elements, sizeof(stack_elem));
+	stack* s = (stack* )malloc(sizeof(stack));
+	s->elements = (stack_elem* )malloc(amount_of_elements*sizeof(stack_elem));
 	s->kanar1 = KANAR;
 	s->kanar2 = KANAR;
 	s->current = 0;
@@ -255,10 +255,10 @@ enum bn_codes {
 
 bn* bn_new()
 {
-	bn* new_bn = (bn* )calloc(1, sizeof(bn));
+	bn* new_bn = (bn* )malloc(sizeof(bn));
 	if (!new_bn)
 		return NULL;
-	new_bn->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
+	new_bn->body = (body_t* )malloc(DEFAULT_SIZE*sizeof(body_t));
 	if (!new_bn->body)
 	{
 		free(new_bn);
@@ -279,13 +279,13 @@ bn *bn_init(bn const *orig) // Создать копию существующе�
 	if (_NO_BN(orig))
 		return NULL;
 	
-	bn* new_bn = (bn* )calloc(1, sizeof(bn));
+	bn* new_bn = (bn* )malloc(sizeof(bn));
 	if (!new_bn)
 		return NULL;
 	new_bn->amount_of_allocated_blocks = orig->amount_of_allocated_blocks;
 	new_bn->bodysize = orig->bodysize;
 	new_bn->sign = orig->sign;
-	new_bn->body = (body_t* )calloc(new_bn->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+	new_bn->body = (body_t* )malloc(new_bn->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
 	if (!new_bn->body)
 	{
 		free(new_bn);
@@ -326,7 +326,7 @@ int bn_init_string(bn *t, const char *init_string)
 	if (t->body)
 		free(t->body);
 	
-	t->body = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+	t->body = (body_t* )malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
 	if (!t->body)
 	{
 		return BN_NO_MEMORY;
@@ -396,7 +396,7 @@ int bn_init_int(bn *t, int init_int)
 	if (t->body)
 		free(t->body);
 	
-	t->body = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+	t->body = (body_t* )malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
 	if (!t->body)
 		return BN_NO_MEMORY;
 	x = init_int*t->sign;
@@ -585,7 +585,7 @@ int bn_add_to(bn *t, bn const *right)
 		int amount_of_blocks = right->amount_of_allocated_blocks + 1;
 		bn* the_bn = t;
 		
-		body_t* tmp = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
+		body_t* tmp = (body_t* )malloc(amount_of_blocks*DEFAULT_SIZE*sizeof(body_t));
 		if (!tmp)
 			return BN_NO_MEMORY;
 		for (int i = 0; i < the_bn->bodysize; i++) tmp[i] = the_bn->body[i]; 
@@ -598,7 +598,7 @@ int bn_add_to(bn *t, bn const *right)
 		int amount_of_blocks = t->amount_of_allocated_blocks + 1;
 		bn* the_bn = t;
 		
-		body_t* tmp = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
+		body_t* tmp = (body_t* )malloc(amount_of_blocks*DEFAULT_SIZE*sizeof(body_t));
 		if (!tmp)
 			return BN_NO_MEMORY;
 		for (int i = 0; i < the_bn->bodysize; i++) tmp[i] = the_bn->body[i]; 
@@ -657,7 +657,7 @@ int bn_add_to(bn *t, bn const *right)
 			case -1:
 			{
 				t->sign = right->sign;
-				body_t* tmp = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+				body_t* tmp = (body_t* )malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
 				if (!tmp)
 					{
 						bn_delete(abs_t);
@@ -703,7 +703,7 @@ int bn_add_to(bn *t, bn const *right)
 	if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
 	{
 		t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
-		body_t* tmp = calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+		body_t* tmp = malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
 		if (!tmp)
 			return BN_NO_MEMORY;
 		for (int i = 0; i < t->bodysize; i++)
@@ -744,7 +744,7 @@ int bn_mul_to(bn *t, bn const *right)
 	//умножение столбиком (по старой схеме)
 	
 	int amount_of_blocks = t->amount_of_allocated_blocks + right->amount_of_allocated_blocks + 1;
-	body_t* mul_result = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
+	body_t* mul_result = (body_t* )malloc(amount_of_blocks*DEFAULT_SIZE*sizeof(body_t));
 	if (!mul_result)
 		return BN_NO_MEMORY;
 	
@@ -766,7 +766,7 @@ int bn_mul_to(bn *t, bn const *right)
 	if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
 	{
 		t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
-		body_t* tmp = calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+		body_t* tmp = malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
 		if (!tmp)
 			return BN_NO_MEMORY;
 		for (int i = 0; i < t->bodysize; i++)
@@ -865,7 +865,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 				bn* x = bn_new(); //отсеченная часть
 				if (!x)
 					return BN_NO_MEMORY;
-				x->body = (body_t* )calloc(abs_right->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+				x->body = (body_t* )malloc(abs_right->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
 				x->sign = 1;
 				
 				for (int i = 0; i < right->bodysize; i++)
@@ -937,7 +937,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 				}
 				free(t->body);
 				t->amount_of_allocated_blocks = (int)trunc(s->current / DEFAULT_SIZE) + 1;
-				t->body = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+				t->body = (body_t* )malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
 				if (!t->body)
 					return BN_NO_MEMORY;
 				t->bodysize = s->current;
@@ -968,7 +968,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 	if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
 	{
 		t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
-		body_t* tmp = calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+		body_t* tmp = malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
 		if (!tmp)
 			return BN_NO_MEMORY;
 		for (int i = 0; i < t->bodysize; i++)
@@ -1010,31 +1010,32 @@ int bn_pow_to(bn *t, int degree)
 	if (_NO_BN(t))
 		return BN_NULL_OBJECT;
 	
-	bn* t_copy = bn_init(t);
-	for (int i = 2; i <= degree; i++)
-	{
-		bn_mul_to(t, t_copy);
-	}
-	return BN_OK;
-	//~ //Бинарное возведение в степень
-	//~ bn* result = bn_new();
-	//~ if (!result)
-		//~ return BN_NO_MEMORY;
-	
-	//~ bn_init_int(result, 1);
-	//~ int pow = degree;
-	//~ while (pow > 0)
+	//~ bn* t_copy = bn_init(t);
+	//~ for (int i = 2; i <= degree; i++)
 	//~ {
-		//~ if (pow % 2 == 1)
-			//~ bn_mul_to(result, t);
-		//~ bn_mul_to(t, t);
-		//~ pow /= 2;
+		//~ bn_mul_to(t, t_copy);
 	//~ }
-	//~ bn_delete(t);
-	//~ t = bn_init(result);
-	//~ if (!t)
-		//~ return BN_NO_MEMORY;
 	//~ return BN_OK;
+	
+	//Бинарное возведение в степень
+	bn* result = bn_new();
+	if (!result)
+		return BN_NO_MEMORY;
+	
+	bn_init_int(result, 1);
+	int pow = degree;
+	while (pow > 0)
+	{
+		if (pow % 2 == 1)
+			bn_mul_to(result, t);
+		bn_mul_to(t, t);
+		pow /= 2;
+	}
+	bn_delete(t);
+	t = bn_init(result);
+	if (!t)
+		return BN_NO_MEMORY;
+	return BN_OK;
 }
 
 // Извлечь корень степени reciprocal из BN (бонусная функция)
