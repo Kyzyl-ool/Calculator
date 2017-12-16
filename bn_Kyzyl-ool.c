@@ -1038,18 +1038,7 @@ int bn_pow_to(bn *t, int degree)
 	return BN_OK;
 }
 
-// Извлечь корень степени reciprocal из BN (бонусная функция)
-int bn_root_to(bn *t, int reciprocal)
-{
-	#ifdef DEBUG
-	_BN_ASSERT(t);
-	#endif
-	if (_NO_BN(t))
-		return BN_NULL_OBJECT;
-	
-	
-	return BN_OK;
-}
+
 
 // Инициализировать значение BN представлением строки
 // в системе счисления radix
@@ -1233,3 +1222,98 @@ const char *bn_to_string(bn const *t, int radix)
 }
 
 
+// Извлечь корень степени reciprocal из BN (бонусная функция)
+int bn_root_to(bn *t, int reciprocal)
+{
+	#ifdef DEBUG
+	_BN_ASSERT(t);
+	#endif
+	if (_NO_BN(t))
+		return BN_NULL_OBJECT;
+	
+	
+	//base = 10
+	//i = 1
+	//while (base^rec < t)
+		//base *= 10
+	
+	if (t->sign == -1 && reciprocal % 2 == 0)
+		return BN_DIVIDE_BY_ZERO;
+	
+	bn* ten = bn_new();
+	bn_init_int(ten, 10);
+	
+	bn* base = bn_new();
+	bn_init_int(base, 10);
+	
+	int i = 0;
+	bn* base_powered = bn_init(base);
+	bn_pow_to(base_powered, reciprocal);
+	while (bn_cmp(base_powered, t) != 1)
+	{
+		i++;
+		bn_mul_to(base, ten);
+		bn_delete(base_powered);
+		base_powered = bn_init(base);
+		bn_pow_to(base_powered, reciprocal);
+	}
+	bn_delete(base_powered);
+	int n = i + 1;
+	
+	stack* s = stack_Construct(n);
+	
+	bn* bn_olds = bn_new();
+	for (int i = 0; i < n; i++)
+	{
+		bn* ten_powered = bn_init(ten);
+		bn_pow_to(ten_powered, n - 1 - i);
+		
+		bn* bn_N_reced = bn_init(ten_powered);
+		bn_add_to(bn_N_reced, bn_olds);
+		bn_pow_to(bn_N_reced, reciprocal);
+		
+		bn* bn_N = bn_init(ten_powered);
+		bn* bn_N_pred = NULL;
+		
+		int j = 1;
+		while (j < 10 && bn_cmp(bn_N_reced, t) != 1)
+		{
+			j++;
+			bn_delete(bn_N_reced);
+			bn_N_reced = bn_init(ten_powered);
+			bn* bn_j = bn_new();
+			bn_init_int(bn_j, j);
+			bn_mul_to(bn_N_reced, bn_j);
+			bn_delete(bn_N_pred);
+			bn_N_pred = bn_init(bn_N);
+			bn_delete(bn_N);
+			bn_N = bn_init(bn_N_reced);
+			bn_delete(bn_j);
+			bn_add_to(bn_N_reced, bn_olds);
+			bn_pow_to(bn_N_reced, reciprocal);
+			_RED_DUMP(bn_N_reced);
+		}
+		printf("\n\n\n\n");
+		stack_Push(s, j - 1);
+		bn_delete(ten_powered);
+		
+		if (bn_N_pred)
+			bn_add_to(bn_olds, bn_N_pred);
+		bn_delete(bn_N);
+		bn_delete(bn_N_reced);
+	}
+	bn_delete(bn_olds);
+	
+	
+	free(t->body);
+	t->bodysize = n;
+	t->amount_of_allocated_blocks = trunc(t->bodysize / DEFAULT_SIZE) + 1;
+	t->body = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+	int k = 0;
+	while (s->current) t->body[k++] = stack_Pop(s);
+	
+	bn_delete(ten);
+	bn_delete(base);
+	stack_Destroy(s);
+	return BN_OK;
+}
