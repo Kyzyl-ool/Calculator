@@ -1,5 +1,5 @@
 #define DEFAULT_SIZE 8
-//~ #define DEBUG
+#define DEBUG
 
 #include <math.h>
 #include <stdlib.h>
@@ -21,10 +21,12 @@
 #define _RED_DUMP(the_bn) printf("\033[1;31m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _GREEN_DUMP(the_bn) printf("\033[1;32m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _BEEP printf("\a")
+#define _BN_ASSERT(the_bn) assert(the_bn); assert(the_bn->body)
+#define _NO_BN(the_bn) !the_bn || !the_bn->body
 
-#ifdef BN
+//~ #ifdef BN
 #include "bn.h"
-#endif
+//~ #endif
 
 #define POISON 999999999999999.9999999999999
 #define KANAR 771
@@ -70,7 +72,9 @@ void 		stack_dump(stack* s, const char* dump_name);
 
 stack* stack_Construct(int amount_of_elements)
 {
+	#ifdef DEBUG
 	assert(amount_of_elements);
+	#endif
 	stack* s = (stack* )calloc(1, sizeof(stack));
 	s->elements = (stack_elem* )calloc(amount_of_elements, sizeof(stack_elem));
 	s->kanar1 = KANAR;
@@ -81,25 +85,32 @@ stack* stack_Construct(int amount_of_elements)
 	int i = 0;
 	for (i = 0; i < amount_of_elements; i++) s->elements[i] = POISON;
 	
+	#ifdef DEBUG
 	assert(!stack_check(s));
+	#endif
 	return s;
 }
 
 int stack_Destroy(stack* s)
 {
+	#ifdef DEBUG
 	assert(s);
+	#endif
 	int error_code = stack_check(s);
 	for(int i = 0; i < s->current; i++) s->elements[i] = POISON;
 	free(s->elements);
 	free(s);
 	
 	return error_code;
+	return 0;
 }
 
 int stack_Push(stack* s, stack_elem value)
 {
+	#ifdef DEBUG
 	assert(s);
 	isfinite(value);
+	#endif
 	
 	if (s->current < s->amount_of_elements)
 	{
@@ -107,17 +118,22 @@ int stack_Push(stack* s, stack_elem value)
 		s->current++;
 		s->hashsum = stack_calc_hashsum(s);
 		return stack_check(s);
+		return 0;
 	}
 	else
 	{
+		#ifdef DEBUG
 		stack_help(ERROR_PUSH_TO_FULL_STACK);
+		#endif
 		return ERROR_PUSH_TO_FULL_STACK;
 	}
 }
 
 stack_elem stack_Pop(stack* s)
 {
+	#ifdef DEBUG
 	assert(s);
+	#endif
 	if (s->current > 0)
 	{
 		stack_elem value = s->elements[s->current-1];
@@ -129,14 +145,18 @@ stack_elem stack_Pop(stack* s)
 	}
 	else
 	{
+		#ifdef DEBUG
 		stack_help(ERROR_POP_FROM_EMPTY_STACK);
+		#endif
 		return POISON;
 	}
 }
 
 int	stack_calc_hashsum(stack* s)
 {
+	#ifdef DEBUG
 	assert(s);
+	#endif
 	int hashsum = s->kanar1 + s->kanar2 + s->current + s->amount_of_elements;
 	int i = 0;
 	for (i = 0; i < s->current; i++) hashsum += s->elements[i];
@@ -216,14 +236,18 @@ int terminate_message(int error)
 
 stack_elem	stack_Get(stack* s, int n)
 {
+	#ifdef DEBUG
 	assert(s);
+	#endif
 	if (n > 0 && n <= s->current)
 	{
 		return s->elements[s->current - n];
 	}
 	else
 	{
+		#ifdef DEBUG
 		stack_help(STACK_GET_FROM_INVALID_INDEX);
+		#endif
 		printf("element: %d\n", s->current - n);
 		return POISON;
 	}
@@ -244,7 +268,14 @@ typedef struct bn_s
 bn* bn_new()
 {
 	bn* new_bn = (bn* )calloc(1, sizeof(bn));
+	if (!new_bn)
+		return NULL;
 	new_bn->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
+	if (!new_bn->body)
+	{
+		free(new_bn);
+		return NULL;
+	}
 	new_bn->sign = 0;
 	new_bn->bodysize = 0;
 	new_bn->amount_of_allocated_blocks = 1;
@@ -255,29 +286,38 @@ bn* bn_new()
 bn *bn_init(bn const *orig) // Создать копию существующего BN
 {
 	#ifdef DEBUG
-	assert(orig);
+	_BN_ASSERT(orig);
 	#endif
+	if (_NO_BN(orig))
+		return NULL;
 	
 	bn* new_bn = (bn* )calloc(1, sizeof(bn));
+	if (!new_bn)
+		return NULL;
 	new_bn->amount_of_allocated_blocks = orig->amount_of_allocated_blocks;
 	new_bn->bodysize = orig->bodysize;
 	new_bn->sign = orig->sign;
 	new_bn->body = (body_t* )calloc(new_bn->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+	if (!new_bn->body)
+	{
+		free(new_bn);
+		return NULL;
+	}
 	for (int i = 0; i < new_bn->amount_of_allocated_blocks*DEFAULT_SIZE; i++)
 		new_bn->body[i] = orig->body[i];
 	
 	return new_bn;
-	
-	//вернуть
 }
 
 // Инициализировать значение BN десятичным представлением строки
 int bn_init_string(bn *t, const char *init_string)
 {
 	#ifdef DEBUG
-	assert(t);
+	_BN_ASSERT(t);
 	assert(init_string);
 	#endif
+	if (_NO_BN(t))
+		return BN_NULL_OBJECT;
 	
 	const char* number = NULL;
 	//Считать все цифры из строки и записать в соответствющие разряды
@@ -299,9 +339,13 @@ int bn_init_string(bn *t, const char *init_string)
 		free(t->body);
 	
 	t->body = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+	if (!t->body)
+	{
+		return BN_NO_MEMORY;
+	}
 	for (i = 0; i < t->bodysize; i++) t->body[t->bodysize - 1 - i] = number[i] - '0';
 	
-	return 0;
+	return BN_OK;
 }
 
 // Инициализировать значение BN представлением строки
@@ -309,10 +353,12 @@ int bn_init_string(bn *t, const char *init_string)
 int bn_init_string_radix(bn *t, const char *init_string, int radix)
 {
 	#ifdef DEBUG
-	assert(t);
+	_BN_ASSERT(t);
 	assert(init_string);
 	isfinite(radix);
 	#endif
+	if (_NO_BN(t))
+		return BN_NULL_OBJECT;
 	
 	//читать посимвольно
 	//опредеить значение каждого символа
@@ -322,16 +368,18 @@ int bn_init_string_radix(bn *t, const char *init_string, int radix)
 	
 	
 	//присвоить t
-	return 0;
+	return BN_OK;
 }
 
 // Инициализировать значение BN заданным целым числом
 int bn_init_int(bn *t, int init_int)
 {
 	#ifdef DEBUG
-	assert(t);
+	_BN_ASSERT(t);
 	isfinite(init_int);
 	#endif
+	if (_NO_BN(t))
+		return BN_NULL_OBJECT;
 	//Брать остаток от деления на 10 и прибавлять к соответствующему разряду
 	
 	//присвоить t
@@ -358,6 +406,8 @@ int bn_init_int(bn *t, int init_int)
 		free(t->body);
 	
 	t->body = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+	if (!t->body)
+		return BN_NO_MEMORY;
 	x = init_int*t->sign;
 	for (int i = 0; i < t->bodysize; i++)
 	{
@@ -365,15 +415,17 @@ int bn_init_int(bn *t, int init_int)
 		x /= 10;
 	}
 	
-	return 0;
+	return BN_OK;
 }
 
 // Уничтожить BN (освободить память)
 int bn_delete(bn *t)
 {
 	#ifdef DEBUG
-	assert(t);
+	_BN_ASSERT(t);
 	#endif
+	if (_NO_BN(t))
+		return BN_NULL_OBJECT;
 	//освобдить body
 	//освободить само число
 	if (t->body)
@@ -381,12 +433,18 @@ int bn_delete(bn *t)
 	
 	free(t);
 	
-	return 0;
+	return BN_OK;
 }
 
 // Если левое меньше, вернуть <0 если равны, вернуть 0 иначе  >0
 int bn_cmp(bn const *left, bn const *right)
 {
+	#ifdef DEBUG
+	_BN_ASSERT(left);
+	_BN_ASSERT(right);
+	#endif
+	if (_NO_BN(left) || _NO_BN(right))
+		return BN_NULL_OBJECT;
 	//сравнение знаков
 		//если одного знака
 			//если положитнльный
@@ -470,26 +528,48 @@ int bn_cmp(bn const *left, bn const *right)
 
 int bn_neg(bn *t) // Изменить знак на противоположный
 {
-	return 0;
+	#ifdef DEBUG
+	_BN_ASSERT(t);
+	#endif
+	if (_NO_BN(t))
+		return BN_NULL_OBJECT;
+	
+	t->sign *= -1;
+	
+	return BN_OK;
 }
 
 int bn_abs(bn *t) // Взять модуль
 {
+	#ifdef DEBUG
+	_BN_ASSERT(t);
+	#endif
+	if (_NO_BN(t))
+		return BN_NULL_OBJECT;
 	if (t->sign < 0)
 	{
 		t->sign = -t->sign;
 	}
-	return 0;
+	return BN_OK;
 }
 
 int bn_sign(bn const *t) //-1 если t<0; 0 если t = 0, 1 если t>0
 {
-	return 0;
+	#ifdef DEBUG
+	_BN_ASSERT(t);
+	#endif
+	if (_NO_BN(t))
+		return BN_NULL_OBJECT;
+	
+	return t->sign;
 }
 
 
 void bn_dump(bn* b, FILE* f)
 {
+	#ifdef DEBUG
+	_BN_ASSERT(b);
+	#endif
 	fprintf(f, "bn's dump.\n{\nbodysize: %d\nbody: ", b->bodysize);
 	
 	for (int i = 0; i < b->amount_of_allocated_blocks*DEFAULT_SIZE; i++)
@@ -500,6 +580,10 @@ void bn_dump(bn* b, FILE* f)
 
 void bn_stabilize(bn* t)
 {
+	#ifdef DEBUG
+	_BN_ASSERT(t);
+	#endif
+	
 	for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++)
 	{
 		if (t->body[i] > 9)
@@ -527,9 +611,11 @@ void bn_stabilize(bn* t)
 int bn_add_to(bn *t, bn const *right)
 {
 	#ifdef DEBUG
-	assert(t);
-	assert(right);
+	_BN_ASSERT(t);
+	_BN_ASSERT(right);
 	#endif
+	if (_NO_BN(t) || _NO_BN(right))
+		return BN_NULL_OBJECT;
 	//предварительное расширение буфера. Если размер буфера right больше, чем t
 		//Расширить до расмера right + 1
 	//Расширить до размера t + 1
@@ -539,6 +625,8 @@ int bn_add_to(bn *t, bn const *right)
 		bn* the_bn = t;
 		
 		body_t* tmp = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
+		if (!tmp)
+			return BN_NO_MEMORY;
 		for (int i = 0; i < the_bn->bodysize; i++) tmp[i] = the_bn->body[i]; 
 		if (the_bn->body) free(the_bn->body);
 		the_bn->body = tmp;
@@ -550,6 +638,8 @@ int bn_add_to(bn *t, bn const *right)
 		bn* the_bn = t;
 		
 		body_t* tmp = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
+		if (!tmp)
+			return BN_NO_MEMORY;
 		for (int i = 0; i < the_bn->bodysize; i++) tmp[i] = the_bn->body[i]; 
 		if (the_bn->body) free(the_bn->body);
 		the_bn->body = tmp;
@@ -587,7 +677,12 @@ int bn_add_to(bn *t, bn const *right)
 			//ноль
 		
 		bn* abs_t = bn_init(t);
+		if (!abs_t)
+			return BN_NO_MEMORY;
 		bn* abs_right = bn_init(right);
+		if (!abs_right)
+			return BN_NO_MEMORY;
+		
 		bn_abs(abs_t);
 		bn_abs(abs_right);
 		switch (bn_cmp(abs_t, abs_right))
@@ -602,6 +697,12 @@ int bn_add_to(bn *t, bn const *right)
 			{
 				t->sign = right->sign;
 				body_t* tmp = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+				if (!tmp)
+					{
+						bn_delete(abs_t);
+						bn_delete(abs_right);
+						return BN_NO_MEMORY;
+					}
 				for (int i = 0; i < t->bodysize; i++)
 					tmp[i] = t->body[i];
 				for (int i = 0; i < right->bodysize; i++)
@@ -642,26 +743,42 @@ int bn_add_to(bn *t, bn const *right)
 	{
 		t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
 		body_t* tmp = calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+		if (!tmp)
+			return BN_NO_MEMORY;
 		for (int i = 0; i < t->bodysize; i++)
 			tmp[i] = t->body[i];
 		free(t->body);
 		t->body = tmp;
 	}
-	return 0;
+	return BN_OK;
 }
 
 int bn_sub_to(bn *t, bn const *right)
 {
+	#ifdef DEBUG
+	_BN_ASSERT(t);
+	_BN_ASSERT(right);
+	#endif
+	if (_NO_BN(t) || _NO_BN(right))
+		return BN_NULL_OBJECT;
 	//аналгично bn_add_to, но right имеет противоположный знак
 	bn* r = bn_init(right);
+	if (!r)
+		return BN_NO_MEMORY;
 	r->sign *= -1;
 	bn_add_to(t, r);
 	bn_delete(r);
-	return 0;
+	return BN_OK;
 }
 
 int bn_mul_to(bn *t, bn const *right)
 {
+	#ifdef DEBUG
+	_BN_ASSERT(t);
+	_BN_ASSERT(right);
+	#endif
+	if (_NO_BN(t) || _NO_BN(right))
+		return BN_NULL_OBJECT;
 	//предварительное расширение буфера
 		//размер буфера t = buf_t + buf_right + 1
 		//собственно расширение буфера
@@ -670,6 +787,9 @@ int bn_mul_to(bn *t, bn const *right)
 	
 	int amount_of_blocks = t->amount_of_allocated_blocks + right->amount_of_allocated_blocks + 1;
 	body_t* mul_result = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
+	if (!mul_result)
+		return BN_NO_MEMORY;
+	
 	int sign_result = t->sign * right->sign;
 	for (int i = 0; i < right->bodysize; i++)
 	{
@@ -689,17 +809,25 @@ int bn_mul_to(bn *t, bn const *right)
 	{
 		t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
 		body_t* tmp = calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+		if (!tmp)
+			return BN_NO_MEMORY;
 		for (int i = 0; i < t->bodysize; i++)
 			tmp[i] = t->body[i];
 		free(t->body);
 		t->body = tmp;
 	}
 	
-	return 0;
+	return BN_OK;
 }
 
 int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО ДЕЛЕНИЕ ПРИ ОТРИЦАТЕЛЬНЫЗ ЧИСТАХ НЕ ВСЕГДА РАБАОТЕТ
 {
+	#ifdef DEBUG
+	_BN_ASSERT(t);
+	_BN_ASSERT(right);
+	#endif
+	if (_NO_BN(t) || _NO_BN(right))
+		return BN_NULL_OBJECT;
 	//Деление столбиком
 	
 	//Сравнить длину делимого и делителя
@@ -728,7 +856,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 			
 	if (right->sign == 0)
 	{
-		return -1;
+		return BN_DIVIDE_BY_ZERO;
 	}
 	
 	int sign_result = t->sign * right->sign;
@@ -736,16 +864,23 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 	{
 		bn_delete(t);
 		t = bn_new();
+		if (!t)
+			return BN_NO_MEMORY;
 	}
 	else
 	{
 		bn* abs_t = bn_init(t);
 		bn* abs_right = bn_init(right);
+		if (!abs_t || !abs_right)
+			return BN_NO_MEMORY;
+			
 		bn_abs(abs_t);
 		bn_abs(abs_right);
 		bn* ten = bn_new();
-		bn_init_int(ten, 10);
 		bn* one = bn_new();
+		if (!ten || !one)
+			return BN_NO_MEMORY;
+		bn_init_int(ten, 10);
 		bn_init_int(one, 1);
 		
 		switch (bn_cmp(abs_t, abs_right))
@@ -754,18 +889,24 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 			{
 				bn_delete(t);
 				t = bn_new();
+				if (!t)
+					return BN_NO_MEMORY;
 				break;
 			}
 			case 0:
 			{
 				bn_delete(t);
 				t = bn_init(one);
-				t->sign = sign_result;	
+				if (!t)
+					return BN_NO_MEMORY;
+				t->sign = sign_result;
 				break;
 			}
 			case 1:
 			{
 				bn* x = bn_new(); //отсеченная часть
+				if (!x)
+					return BN_NO_MEMORY;
 				x->body = (body_t* )calloc(abs_right->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
 				x->sign = 1;
 				
@@ -791,6 +932,8 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 				while (st->current > 0 || bn_cmp(x, abs_right) != -1)
 				{
 					bn* premul = bn_init(abs_right);
+					if (!premul)
+						return BN_NO_MEMORY;
 					int digit = 1;
 					while (bn_cmp(premul, x) == -1)
 					{
@@ -812,6 +955,8 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 					while (st->current > 0 && bn_cmp(x, abs_right) == -1)
 					{
 						bn* tmp = bn_new();
+						if (!tmp)
+							return BN_NO_MEMORY;
 						bn_init_int(tmp, stack_Pop(st));
 						
 						if (tmp->sign == 0 && x->sign == 0)
@@ -835,6 +980,8 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 				free(t->body);
 				t->amount_of_allocated_blocks = (int)trunc(s->current / DEFAULT_SIZE) + 1;
 				t->body = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+				if (!t->body)
+					return BN_NO_MEMORY;
 				t->bodysize = s->current;
 				t->sign = sign_result;
 				int i = 0;
@@ -857,29 +1004,45 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 		bn_delete(abs_right);
 		bn_delete(ten);
 		bn_delete(one);
-		
 	}
 	
-	return 0;
+	return BN_OK;
 }
 
 int bn_mod_to(bn *t, bn const *right)
 {
+	#ifdef DEBUG
+	_BN_ASSERT(t);
+	_BN_ASSERT(right);
+	#endif
+	if (_NO_BN(t) || _NO_BN(right))
+		return BN_NULL_OBJECT;
 	//испльзуя предыдущую функцию, вычислить остаток от деления
 	bn* tmp = bn_init(t);
+	if (!tmp)
+		return BN_NO_MEMORY;
 	bn_div_to(tmp, right);
 	bn_mul_to(tmp, right);
 	bn_sub_to(t, tmp);
 	
 	bn_delete(tmp);
-	return 0;
+	return BN_OK;
 }
 
 // Возвести число в степень degree
 int bn_pow_to(bn *t, int degree)
 {
+	#ifdef DEBUG
+	_BN_ASSERT(t);
+	isfinite(degree);
+	#endif
+	if (_NO_BN(t))
+		return BN_NULL_OBJECT;
 	//Бинарное возведение в степень
 	bn* result = bn_new();
+	if (!result)
+		return BN_NO_MEMORY;
+	
 	bn_init_int(result, 1);
 	int pow = degree;
 	while (pow > 0)
@@ -891,19 +1054,39 @@ int bn_pow_to(bn *t, int degree)
 	}
 	bn_delete(t);
 	t = bn_init(result);
-	return 0;
+	if (!t)
+		return BN_NO_MEMORY;
+	return BN_OK;
 }
 
 // Извлечь корень степени reciprocal из BN (бонусная функция)
 int bn_root_to(bn *t, int reciprocal)
 {
-	return 0;
+	#ifdef DEBUG
+	_BN_ASSERT(t);
+	isfinite(reciprocal);
+	#endif
+	if (_NO_BN(t))
+		return BN_NULL_OBJECT;
+	
+	
+	return BN_OK;
 }
 
 // Аналоги операций x = l+r (l-r, l*r, l/r, l%r)
 bn* bn_add(bn const *left, bn const *right)
 {
+	#ifdef DEBUG
+	_BN_ASSERT(left);
+	_BN_ASSERT(right);
+	#endif
+	if (_NO_BN(left) || _NO_BN(right))
+		return NULL;
+	
 	bn* result = bn_new();
+	if (!result)
+		return NULL;
+	
 	bn_add_to(result, left);
 	bn_add_to(result, right);
 	return result;
@@ -911,7 +1094,15 @@ bn* bn_add(bn const *left, bn const *right)
 
 bn* bn_sub(bn const *left, bn const *right)
 {
+	#ifdef DEBUG
+	_BN_ASSERT(left);
+	_BN_ASSERT(right);
+	#endif
+	if (_NO_BN(left) || _NO_BN(right))
+		return NULL;
 	bn* result = bn_new();
+	if (!result)
+		return NULL;
 	bn_add_to(result, left);
 	bn_sub_to(result, right);
 	return result;
@@ -919,21 +1110,46 @@ bn* bn_sub(bn const *left, bn const *right)
 
 bn* bn_mul(bn const *left, bn const *right)
 {
+	#ifdef DEBUG
+	_BN_ASSERT(left);
+	_BN_ASSERT(right);
+	#endif
+	if (_NO_BN(left) || _NO_BN(right))
+		return NULL;
 	bn* result = bn_init(left);
+	if (!result)
+		return NULL;
 	bn_mul_to(result, right);
 	return result;
 }
 
 bn* bn_div(bn const *left, bn const *right)
 {
+	#ifdef DEBUG
+	_BN_ASSERT(left);
+	_BN_ASSERT(right);
+	#endif
+	if (_NO_BN(left) || _NO_BN(right))
+		return NULL;
 	bn* result = bn_init(left);
+	if (!result)
+		return NULL;
 	bn_div_to(result, right);
 	return result;
 }
 
 bn* bn_mod(bn const *left, bn const *right)
 {
+	#ifdef DEBUG
+	_BN_ASSERT(left);
+	_BN_ASSERT(right);
+	#endif
+	if (_NO_BN(left) || _NO_BN(right))
+		return NULL;
+	
 	bn* result = bn_init(left);
+	if (!result)
+		return NULL;
 	bn_mod_to(result, right);
 	return result;
 }
@@ -942,6 +1158,13 @@ bn* bn_mod(bn const *left, bn const *right)
 // Строку после использования потребуется удалить.
 const char *bn_to_string(bn const *t, int radix)
 {
+	#ifdef DEBUG
+	_BN_ASSERT(t);
+	assert(isfinite(radix));
+	#endif
+	if (_NO_BN(t))
+		return NULL;
+	
 	//цикл, пока число больше radix
 		//взять остаток от деления числа на radix
 		//полученноу числу сопоставить символ и вывести
