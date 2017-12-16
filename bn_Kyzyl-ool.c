@@ -6,7 +6,7 @@
 #include "bn.h"
 #endif
 
-#define DEFAULT_SIZE 64
+#define DEFAULT_SIZE 16
 //~ #define DEBUG
 #define _RED_DUMP(the_bn) printf("\033[1;31m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _GREEN_DUMP(the_bn) printf("\033[1;32m"); bn_dump(the_bn, stdout); printf("\033[0m")
@@ -62,8 +62,8 @@ stack* stack_Construct(int amount_of_elements)
 	#ifdef DEBUG
 	assert(amount_of_elements);
 	#endif
-	stack* s = (stack* )malloc(sizeof(stack));
-	s->elements = (stack_elem* )malloc(amount_of_elements*sizeof(stack_elem));
+	stack* s = (stack* )calloc(1, sizeof(stack));
+	s->elements = (stack_elem* )calloc(amount_of_elements, sizeof(stack_elem));
 	s->kanar1 = KANAR;
 	s->kanar2 = KANAR;
 	s->current = 0;
@@ -249,16 +249,16 @@ typedef struct bn_s
 	int amount_of_allocated_blocks;
 	char sign;
 } bn;
-enum bn_codes {
-   BN_OK, BN_NULL_OBJECT, BN_NO_MEMORY, BN_DIVIDE_BY_ZERO
-};
+//~ enum bn_codes {
+   //~ BN_OK, BN_NULL_OBJECT, BN_NO_MEMORY, BN_DIVIDE_BY_ZERO
+//~ };
 
 bn* bn_new()
 {
-	bn* new_bn = (bn* )malloc(sizeof(bn));
+	bn* new_bn = (bn* )calloc(1, sizeof(bn));
 	if (!new_bn)
 		return NULL;
-	new_bn->body = (body_t* )malloc(DEFAULT_SIZE*sizeof(body_t));
+	new_bn->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
 	if (!new_bn->body)
 	{
 		free(new_bn);
@@ -279,13 +279,13 @@ bn *bn_init(bn const *orig) // Создать копию существующе�
 	if (_NO_BN(orig))
 		return NULL;
 	
-	bn* new_bn = (bn* )malloc(sizeof(bn));
+	bn* new_bn = (bn* )calloc(1, sizeof(bn));
 	if (!new_bn)
 		return NULL;
 	new_bn->amount_of_allocated_blocks = orig->amount_of_allocated_blocks;
 	new_bn->bodysize = orig->bodysize;
 	new_bn->sign = orig->sign;
-	new_bn->body = (body_t* )malloc(new_bn->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
+	new_bn->body = (body_t* )calloc(new_bn->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
 	if (!new_bn->body)
 	{
 		free(new_bn);
@@ -326,7 +326,7 @@ int bn_init_string(bn *t, const char *init_string)
 	if (t->body)
 		free(t->body);
 	
-	t->body = (body_t* )malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
+	t->body = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
 	if (!t->body)
 	{
 		return BN_NO_MEMORY;
@@ -396,7 +396,7 @@ int bn_init_int(bn *t, int init_int)
 	if (t->body)
 		free(t->body);
 	
-	t->body = (body_t* )malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
+	t->body = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
 	if (!t->body)
 		return BN_NO_MEMORY;
 	x = init_int*t->sign;
@@ -585,7 +585,7 @@ int bn_add_to(bn *t, bn const *right)
 		int amount_of_blocks = right->amount_of_allocated_blocks + 1;
 		bn* the_bn = t;
 		
-		body_t* tmp = (body_t* )malloc(amount_of_blocks*DEFAULT_SIZE*sizeof(body_t));
+		body_t* tmp = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
 		if (!tmp)
 			return BN_NO_MEMORY;
 		for (int i = 0; i < the_bn->bodysize; i++) tmp[i] = the_bn->body[i]; 
@@ -598,7 +598,7 @@ int bn_add_to(bn *t, bn const *right)
 		int amount_of_blocks = t->amount_of_allocated_blocks + 1;
 		bn* the_bn = t;
 		
-		body_t* tmp = (body_t* )malloc(amount_of_blocks*DEFAULT_SIZE*sizeof(body_t));
+		body_t* tmp = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
 		if (!tmp)
 			return BN_NO_MEMORY;
 		for (int i = 0; i < the_bn->bodysize; i++) tmp[i] = the_bn->body[i]; 
@@ -657,7 +657,7 @@ int bn_add_to(bn *t, bn const *right)
 			case -1:
 			{
 				t->sign = right->sign;
-				body_t* tmp = (body_t* )malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
+				body_t* tmp = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
 				if (!tmp)
 					{
 						bn_delete(abs_t);
@@ -703,7 +703,7 @@ int bn_add_to(bn *t, bn const *right)
 	if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
 	{
 		t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
-		body_t* tmp = malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
+		body_t* tmp = calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
 		if (!tmp)
 			return BN_NO_MEMORY;
 		for (int i = 0; i < t->bodysize; i++)
@@ -743,12 +743,29 @@ int bn_mul_to(bn *t, bn const *right)
 	
 	//умножение столбиком (по старой схеме)
 	
+	int sign_result = t->sign * right->sign;
+	if (t->body[0] == 1 && t->bodysize == 1)
+	{
+		free(t->body);
+		t->body = (body_t* )calloc(right->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+		for (int i = 0; i < right->bodysize; i++) t->body[i] = right->body[i];
+		t->bodysize = right->bodysize;
+		t->amount_of_allocated_blocks = right->amount_of_allocated_blocks;
+		t->sign = sign_result;
+		return BN_OK;
+	}
+	else if (right->body[0] == 1 && right->bodysize == 1)
+	{
+		t->sign = sign_result;
+		return BN_OK;
+	}
+	
 	int amount_of_blocks = t->amount_of_allocated_blocks + right->amount_of_allocated_blocks + 1;
-	body_t* mul_result = (body_t* )malloc(amount_of_blocks*DEFAULT_SIZE*sizeof(body_t));
+	body_t* mul_result = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
 	if (!mul_result)
 		return BN_NO_MEMORY;
 	
-	int sign_result = t->sign * right->sign;
+	
 	for (int i = 0; i < right->bodysize; i++)
 	{
 		for (int j = 0; j < t->bodysize; j++)
@@ -766,7 +783,7 @@ int bn_mul_to(bn *t, bn const *right)
 	if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
 	{
 		t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
-		body_t* tmp = malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
+		body_t* tmp = calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
 		if (!tmp)
 			return BN_NO_MEMORY;
 		for (int i = 0; i < t->bodysize; i++)
@@ -865,7 +882,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 				bn* x = bn_new(); //отсеченная часть
 				if (!x)
 					return BN_NO_MEMORY;
-				x->body = (body_t* )malloc(abs_right->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
+				x->body = (body_t* )calloc(abs_right->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
 				x->sign = 1;
 				
 				for (int i = 0; i < right->bodysize; i++)
@@ -937,7 +954,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 				}
 				free(t->body);
 				t->amount_of_allocated_blocks = (int)trunc(s->current / DEFAULT_SIZE) + 1;
-				t->body = (body_t* )malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
+				t->body = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
 				if (!t->body)
 					return BN_NO_MEMORY;
 				t->bodysize = s->current;
@@ -968,7 +985,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 	if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
 	{
 		t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
-		body_t* tmp = malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
+		body_t* tmp = calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
 		if (!tmp)
 			return BN_NO_MEMORY;
 		for (int i = 0; i < t->bodysize; i++)
@@ -1007,8 +1024,8 @@ int bn_pow_to(bn *t, int degree)
 	#ifdef DEBUG
 	_BN_ASSERT(t);
 	#endif
-	if (_NO_BN(t))
-		return BN_NULL_OBJECT;
+	//~ if (_NO_BN(t))
+		//~ return BN_NULL_OBJECT;
 	
 	//~ bn* t_copy = bn_init(t);
 	//~ for (int i = 2; i <= degree; i++)
@@ -1019,22 +1036,32 @@ int bn_pow_to(bn *t, int degree)
 	
 	//Бинарное возведение в степень
 	bn* result = bn_new();
-	if (!result)
-		return BN_NO_MEMORY;
-	
 	bn_init_int(result, 1);
-	int pow = degree;
-	while (pow > 0)
+	int n = degree;
+	
+	while (n)
 	{
-		if (pow % 2 == 1)
+		if (n % 2 == 1)
+		{
 			bn_mul_to(result, t);
-		bn_mul_to(t, t);
-		pow /= 2;
+			n--;
+		}
+		else
+		{
+			bn* t_copy = bn_init(t);
+			bn_mul_to(t, t_copy);
+			n /= 2;
+		}
 	}
-	bn_delete(t);
-	t = bn_init(result);
-	if (!t)
-		return BN_NO_MEMORY;
+	
+	free(t->body);
+	_BN_STABILIZE(result);
+	t->body = (body_t* )calloc(result->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+	t->bodysize = result->bodysize;
+	t->amount_of_allocated_blocks = result->amount_of_allocated_blocks;
+	for (int i = 0; i < result->bodysize; i++) t->body[i]= result->body[i];
+	t->sign = result->sign;
+	bn_delete(result);
 	return BN_OK;
 }
 
