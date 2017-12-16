@@ -6,7 +6,7 @@
 #include "bn.h"
 #endif
 
-#define DEFAULT_SIZE 16
+#define DEFAULT_SIZE 32
 //~ #define DEBUG
 #define _RED_DUMP(the_bn) printf("\033[1;31m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _GREEN_DUMP(the_bn) printf("\033[1;32m"); bn_dump(the_bn, stdout); printf("\033[0m")
@@ -249,9 +249,9 @@ typedef struct bn_s
 	int amount_of_allocated_blocks;
 	char sign;
 } bn;
-enum bn_codes {
-   BN_OK = 0, BN_NULL_OBJECT, BN_NO_MEMORY, BN_DIVIDE_BY_ZERO
-};
+//~ enum bn_codes {
+   //~ BN_OK = 0, BN_NULL_OBJECT, BN_NO_MEMORY, BN_DIVIDE_BY_ZERO
+//~ };
 
 bn* bn_new()
 {
@@ -1201,8 +1201,8 @@ const char *bn_to_string(bn const *t, int radix)
 		bn_div_to(p, bn_radix);
 	}
 	
-	char outs[t->bodysize];
-	for (int i = 0; i < t->bodysize; i++) outs[i] = 0;
+	
+	char* outs = (char* )calloc(t->bodysize, sizeof(char));
 	int i = 0;
 	while (s->current)
 	{
@@ -1215,10 +1215,7 @@ const char *bn_to_string(bn const *t, int radix)
 		//взять остаток от деления t на radix
 		//класть в стек
 		//делить текущее число нацело на radix
-	char* result = (char* )calloc(i, sizeof(char));
-	for (int j = 0; j < i; j++) result[j] = outs[j];
-	result[i] = 0;
-	return result;
+	return outs;
 }
 
 
@@ -1291,9 +1288,7 @@ int bn_root_to(bn *t, int reciprocal)
 			bn_delete(bn_j);
 			bn_add_to(bn_N_reced, bn_olds);
 			bn_pow_to(bn_N_reced, reciprocal);
-			_RED_DUMP(bn_N_reced);
 		}
-		printf("\n\n\n\n");
 		stack_Push(s, j - 1);
 		bn_delete(ten_powered);
 		

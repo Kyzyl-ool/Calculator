@@ -1,4 +1,7 @@
-stack "s" (STACK_OK) [0x7fe2c2c02c70] {
-	current = 0
+stack "s" (STACK_OK) [0x7fb9ee402dd0] {
+	current = 3
 
+	elements[0]: 11
+	elements[1]: 1
+	elements[2]: 13
 }
