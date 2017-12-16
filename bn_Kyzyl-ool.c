@@ -6,14 +6,14 @@
 #include "bn.h"
 #endif
 
-#define DEFAULT_SIZE 8
+#define DEFAULT_SIZE 64
 #define DEBUG
 #define _RED_DUMP(the_bn) printf("\033[1;31m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _GREEN_DUMP(the_bn) printf("\033[1;32m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _BEEP printf("\a")
 #define _BN_ASSERT(the_bn) assert(the_bn); assert(the_bn->body)
 #define _NO_BN(the_bn) !the_bn || !the_bn->body
-#define _BN_STABILIZE { for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++){if (t->body[i] > 9) { t->body[i+1] += t->body[i] / 10; t->body[i] %= 10; } while (t->body[i] < 0) { t->body[i] += 10; t->body[i+1]--; } } t->bodysize = 0; for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++) { if (t->body[i] != 0) t->bodysize = i + 1; } if (t->bodysize == 0) t->sign = 0;}
+#define _BN_STABILIZE(t) { for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++){if (t->body[i] > 9) { t->body[i+1] += t->body[i] / 10; t->body[i] %= 10; } while (t->body[i] < 0) { t->body[i] += 10; t->body[i+1]--; } } t->bodysize = 0; for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++) { if (t->body[i] != 0) t->bodysize = i + 1; } if (t->bodysize == 0) t->sign = 0;}
 
 #define POISON 999999999999999.9999999999999
 #define KANAR 771
@@ -421,7 +421,6 @@ int bn_delete(bn *t)
 	//освободить само число
 	if (t->body)
 		free(t->body);
-	
 	free(t);
 	
 	return BN_OK;
@@ -569,35 +568,6 @@ void bn_dump(bn* b, FILE* f)
 	fprintf(f,"\namount of allocated blocks: %d\nsign: %d\n}\n", b->amount_of_allocated_blocks, b->sign);
 }
 
-void bn_stabilize(bn* t)
-{
-	#ifdef DEBUG
-	_BN_ASSERT(t);
-	#endif
-	
-	for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++)
-	{
-		if (t->body[i] > 9)
-		{
-			t->body[i+1] += t->body[i] / 10;
-			t->body[i] %= 10;
-		}
-		while (t->body[i] < 0)
-		{
-			t->body[i] += 10;
-			t->body[i+1]--;
-		}
-	}
-	t->bodysize = 0;
-	for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++)
-	{
-		if (t->body[i] != 0)
-			t->bodysize = i + 1;
-	}
-	if (t->bodysize == 0) t->sign = 0;
-}
-
-
 // Операции, аналогичные +=, -=, *=, /=, %=
 int bn_add_to(bn *t, bn const *right)
 {
@@ -720,7 +690,7 @@ int bn_add_to(bn *t, bn const *right)
 		for (int i = 0; i < right->bodysize; i++)
 			t->body[i] = right->body[i];
 	}
-	bn_stabilize(t);
+	_BN_STABILIZE(t);
 	
 	//если можно обойтись меньшей памятью
 		//выделить нужную память
@@ -753,12 +723,9 @@ int bn_sub_to(bn *t, bn const *right)
 	if (_NO_BN(t) || _NO_BN(right))
 		return BN_NULL_OBJECT;
 	//аналгично bn_add_to, но right имеет противоположный знак
-	bn* r = bn_init(right);
-	if (!r)
-		return BN_NO_MEMORY;
-	r->sign *= -1;
-	bn_add_to(t, r);
-	bn_delete(r);
+	bn_neg(t);
+	bn_add_to(t, right);
+	bn_neg(t);
 	return BN_OK;
 }
 
@@ -793,7 +760,7 @@ int bn_mul_to(bn *t, bn const *right)
 	free(t->body);
 	t->body = mul_result;
 	t->amount_of_allocated_blocks = amount_of_blocks;
-	bn_stabilize(t);
+	_BN_STABILIZE(t);
 	
 	
 	if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
@@ -997,6 +964,19 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 		bn_delete(one);
 	}
 	
+	_BN_STABILIZE(t);
+	if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
+	{
+		t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
+		body_t* tmp = calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+		if (!tmp)
+			return BN_NO_MEMORY;
+		for (int i = 0; i < t->bodysize; i++)
+			tmp[i] = t->body[i];
+		free(t->body);
+		t->body = tmp;
+	}
+	
 	return BN_OK;
 }
 
@@ -1012,6 +992,7 @@ int bn_mod_to(bn *t, bn const *right)
 	bn* tmp = bn_init(t);
 	if (!tmp)
 		return BN_NO_MEMORY;
+	
 	bn_div_to(tmp, right);
 	bn_mul_to(tmp, right);
 	bn_sub_to(t, tmp);
