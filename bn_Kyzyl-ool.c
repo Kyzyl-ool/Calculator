@@ -249,9 +249,9 @@ typedef struct bn_s
 	int amount_of_allocated_blocks;
 	char sign;
 } bn;
-//~ enum bn_codes {
-   //~ BN_OK, BN_NULL_OBJECT, BN_NO_MEMORY, BN_DIVIDE_BY_ZERO
-//~ };
+enum bn_codes {
+   BN_OK = 0, BN_NULL_OBJECT, BN_NO_MEMORY, BN_DIVIDE_BY_ZERO
+};
 
 bn* bn_new()
 {
@@ -333,33 +333,6 @@ int bn_init_string(bn *t, const char *init_string)
 	}
 	for (i = 0; i < t->bodysize; i++) t->body[t->bodysize - 1 - i] = number[i] - '0';
 	
-	return BN_OK;
-}
-
-// Инициализировать значение BN представлением строки
-// в системе счисления radix
-int bn_init_string_radix(bn *t, const char *init_string, int radix)
-{
-	#ifdef DEBUG
-	_BN_ASSERT(t);
-	assert(init_string);
-	#endif
-	if (_NO_BN(t))
-		return BN_NULL_OBJECT;
-	
-	//читать посимвольно
-	//опредеить значение каждого символа
-	//прибавить полученное значение инициализируемому числу
-	// и так со всеми симвлоами
-	
-	int i = 0;
-	while (init_string[i] != '\0')
-	{
-		
-		i++;
-	}
-	
-	//присвоить t
 	return BN_OK;
 }
 
@@ -1078,6 +1051,55 @@ int bn_root_to(bn *t, int reciprocal)
 	return BN_OK;
 }
 
+// Инициализировать значение BN представлением строки
+// в системе счисления radix
+int bn_init_string_radix(bn *t, const char *init_string, int radix)
+{
+	bn_delete(t);
+	t = bn_new();
+	//читать посимвольно
+	//опредеить значение каждого символа
+	//прибавить полученное значение инициализируемому числу
+	// и так со всеми симвлоами
+	
+	int i = 0;
+	for (i = 0; init_string[i] != '\0'; i++);
+	int n = i;
+	
+	for (i = 0; i < n; i++)
+	{
+		bn* rn = bn_new();
+		bn_init_int(rn, radix);
+		bn_pow_to(rn, i);
+		bn* p = bn_new();
+		#define x init_string[n - 1 - i]
+		if (x >= '0' && x <= '9')
+		{
+			bn_init_int(p, x - '0');
+		}
+		else if (x >= 'A' && x<='Z')
+		{
+			bn_init_int(p, x - 'A' + 10);
+		}
+		else if (x >= 'a' && x <= 'z')
+		{
+			bn_init_int(p, x - 'a' + 10);
+		}
+		else
+			assert(0);
+		
+		
+		bn_mul_to(rn, p);
+		bn_add_to(t, rn);
+		#undef x
+		bn_delete(p);
+		bn_delete(rn);
+	}
+	
+	//присвоить t
+	return BN_OK;
+}
+
 // Аналоги операций x = l+r (l-r, l*r, l/r, l%r)
 bn* bn_add(bn const *left, bn const *right)
 {
@@ -1169,10 +1191,45 @@ const char *bn_to_string(bn const *t, int radix)
 	if (_NO_BN(t))
 		return NULL;
 	
-	//цикл, пока число больше radix
-		//взять остаток от деления числа на radix
-		//полученноу числу сопоставить символ и вывести
-	return NULL;
+	stack* s = stack_Construct(t->bodysize);
+	
+	bn* p = bn_init(t);
+	bn* bn_radix = bn_new();
+	bn_init_int(bn_radix, radix);
+	bn* digit = bn_new();
+	while (p->sign != 0)
+	{
+		digit = bn_mod(p, bn_radix);
+		int d = 0;
+		int ten = 1;
+		for (int i = 0; i < digit->bodysize; i++)
+		{
+			d += digit->body[i]*ten;
+			ten *= 10;
+		}
+		stack_Push(s, d);
+		bn_delete(digit);
+		bn_div_to(p, bn_radix);
+	}
+	
+	char outs[t->bodysize];
+	for (int i = 0; i < t->bodysize; i++) outs[i] = 0;
+	int i = 0;
+	while (s->current)
+	{
+		outs[i] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[(int)stack_Pop(s)];
+		i++;
+	}
+	
+	stack_Destroy(s);
+	//пока текущее число не ноль
+		//взять остаток от деления t на radix
+		//класть в стек
+		//делить текущее число нацело на radix
+	char* result = (char* )calloc(i, sizeof(char));
+	for (int j = 0; j < i; j++) result[j] = outs[j];
+	result[i] = 0;
+	return result;
 }
 
 
