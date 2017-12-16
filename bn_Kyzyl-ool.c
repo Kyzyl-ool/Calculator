@@ -1,32 +1,19 @@
-#define DEFAULT_SIZE 8
-#define DEBUG
-
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
+#ifdef BN
+#include "bn.h"
+#endif
 
-/*		EXPAND_BODY(the_bn, amount_of_blocks)
-		
-		int amount_of_blocks = 2;
-		bn* the_bn = t;
-		
-		body_t* tmp = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
-		for (int i = 0; i < the_bn->bodysize; i++) tmp[i] = the_bn->body[i]; 
-		if (the_bn->body) free(the_bn->body);
-		the_bn->body = tmp;
-		the_bn->amount_of_allocated_blocks = amount_of_blocks;
-*/
-
+#define DEFAULT_SIZE 8
+#define DEBUG
 #define _RED_DUMP(the_bn) printf("\033[1;31m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _GREEN_DUMP(the_bn) printf("\033[1;32m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _BEEP printf("\a")
 #define _BN_ASSERT(the_bn) assert(the_bn); assert(the_bn->body)
 #define _NO_BN(the_bn) !the_bn || !the_bn->body
-
-//~ #ifdef BN
-#include "bn.h"
-//~ #endif
+#define _BN_STABILIZE { for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++){if (t->body[i] > 9) { t->body[i+1] += t->body[i] / 10; t->body[i] %= 10; } while (t->body[i] < 0) { t->body[i] += 10; t->body[i+1]--; } } t->bodysize = 0; for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++) { if (t->body[i] != 0) t->bodysize = i + 1; } if (t->bodysize == 0) t->sign = 0;}
 
 #define POISON 999999999999999.9999999999999
 #define KANAR 771
@@ -109,7 +96,6 @@ int stack_Push(stack* s, stack_elem value)
 {
 	#ifdef DEBUG
 	assert(s);
-	isfinite(value);
 	#endif
 	
 	if (s->current < s->amount_of_elements)
@@ -263,7 +249,9 @@ typedef struct bn_s
 	int amount_of_allocated_blocks;
 	char sign;
 } bn;
-
+enum bn_codes {
+   BN_OK, BN_NULL_OBJECT, BN_NO_MEMORY, BN_DIVIDE_BY_ZERO
+};
 
 bn* bn_new()
 {
@@ -355,7 +343,6 @@ int bn_init_string_radix(bn *t, const char *init_string, int radix)
 	#ifdef DEBUG
 	_BN_ASSERT(t);
 	assert(init_string);
-	isfinite(radix);
 	#endif
 	if (_NO_BN(t))
 		return BN_NULL_OBJECT;
@@ -365,7 +352,12 @@ int bn_init_string_radix(bn *t, const char *init_string, int radix)
 	//прибавить полученное значение инициализируемому числу
 	// и так со всеми симвлоами
 	
-	
+	int i = 0;
+	while (init_string[i] != '\0')
+	{
+		
+		i++;
+	}
 	
 	//присвоить t
 	return BN_OK;
@@ -376,7 +368,6 @@ int bn_init_int(bn *t, int init_int)
 {
 	#ifdef DEBUG
 	_BN_ASSERT(t);
-	isfinite(init_int);
 	#endif
 	if (_NO_BN(t))
 		return BN_NULL_OBJECT;
@@ -1034,29 +1025,35 @@ int bn_pow_to(bn *t, int degree)
 {
 	#ifdef DEBUG
 	_BN_ASSERT(t);
-	isfinite(degree);
 	#endif
 	if (_NO_BN(t))
 		return BN_NULL_OBJECT;
-	//Бинарное возведение в степень
-	bn* result = bn_new();
-	if (!result)
-		return BN_NO_MEMORY;
 	
-	bn_init_int(result, 1);
-	int pow = degree;
-	while (pow > 0)
+	bn* t_copy = bn_init(t);
+	for (int i = 2; i <= degree; i++)
 	{
-		if (pow % 2 == 1)
-			bn_mul_to(result, t);
-		bn_mul_to(t, t);
-		pow /= 2;
+		bn_mul_to(t, t_copy);
 	}
-	bn_delete(t);
-	t = bn_init(result);
-	if (!t)
-		return BN_NO_MEMORY;
 	return BN_OK;
+	//~ //Бинарное возведение в степень
+	//~ bn* result = bn_new();
+	//~ if (!result)
+		//~ return BN_NO_MEMORY;
+	
+	//~ bn_init_int(result, 1);
+	//~ int pow = degree;
+	//~ while (pow > 0)
+	//~ {
+		//~ if (pow % 2 == 1)
+			//~ bn_mul_to(result, t);
+		//~ bn_mul_to(t, t);
+		//~ pow /= 2;
+	//~ }
+	//~ bn_delete(t);
+	//~ t = bn_init(result);
+	//~ if (!t)
+		//~ return BN_NO_MEMORY;
+	//~ return BN_OK;
 }
 
 // Извлечь корень степени reciprocal из BN (бонусная функция)
@@ -1064,7 +1061,6 @@ int bn_root_to(bn *t, int reciprocal)
 {
 	#ifdef DEBUG
 	_BN_ASSERT(t);
-	isfinite(reciprocal);
 	#endif
 	if (_NO_BN(t))
 		return BN_NULL_OBJECT;
@@ -1160,7 +1156,6 @@ const char *bn_to_string(bn const *t, int radix)
 {
 	#ifdef DEBUG
 	_BN_ASSERT(t);
-	assert(isfinite(radix));
 	#endif
 	if (_NO_BN(t))
 		return NULL;
