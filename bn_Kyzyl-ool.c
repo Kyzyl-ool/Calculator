@@ -6,7 +6,8 @@
 #include "bn.h"
 #endif
 
-#define DEFAULT_SIZE 32
+#define DEFAULT_SIZE 8
+#define DYNAMIC_STACK_POISON -111
 //~ #define DEBUG
 #define _RED_DUMP(the_bn) printf("\033[1;31m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _GREEN_DUMP(the_bn) printf("\033[1;32m"); bn_dump(the_bn, stdout); printf("\033[0m")
@@ -15,230 +16,219 @@
 #define _NO_BN(the_bn) !the_bn || !the_bn->body
 #define _BN_STABILIZE(t) for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++){if (t->body[i] > 9) { t->body[i+1] += t->body[i] / 10; t->body[i] %= 10; } while (t->body[i] < 0) { t->body[i] += 10; t->body[i+1]--; } } t->bodysize = 0; for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++) { if (t->body[i] != 0) t->bodysize = i + 1; } if (t->bodysize == 0) t->sign = 0
 
-#define POISON 999999999999999.9999999999999
-#define KANAR 771
+#define DYNAMIC_STACK_DEFAULT_SIZE 32
 
-typedef double stack_elem;
 
-enum stack_error_codes
+typedef int dynamic_stack_t;
+typedef struct dynamic_stack
 {
-	STACK_OK = 0,
-	STACK_TAIL_IS_NOT_POISON,
-	STACK_ELEMENT_IS_POISON, 
-	STACK_HASHSUM_ERROR,
-	ERROR_POP_FROM_EMPTY_STACK, 
-	ERROR_PUSH_TO_FULL_STACK,
-	STACK_CURRENT_MORE_THAN_LENGTH,
-	STACK_GET_FROM_INVALID_INDEX,
-};
-typedef enum stack_error_codes stack_error_code;
-
-typedef struct stack
-{
-	int kanar1;
+	dynamic_stack_t* data;
 	int current;
-	int amount_of_elements;
-	stack_elem* elements;
-	int hashsum;
-	int kanar2;
-	
-}stack;
+	int amount_of_allocated_blocks;
+} dynamic_stack;
 
-stack* 		stack_Construct(int amount_of_elements);
-int 		stack_Destroy(stack* s);
-int 		stack_Push(stack* s, stack_elem value);
-stack_elem	stack_Pop(stack* s);
-int			stack_calc_hashsum(stack* s);
-stack_error_code	stack_check(stack* s);
-char*		stack_error_message(stack_error_code error_code);
-void		stack_help(stack_error_code error_code);
-void		stack_print_dump(stack* s);
-int  		terminate_message(int error);
-stack_elem	stack_Get(stack* s, int n);
-void 		stack_dump(stack* s, const char* dump_name);
-
-stack* stack_Construct(int amount_of_elements)
+typedef enum dynamic_stack_error_codes
 {
-	#ifdef DEBUG
-	assert(amount_of_elements);
-	#endif
-	stack* s = (stack* )calloc(1, sizeof(stack));
-	s->elements = (stack_elem* )calloc(amount_of_elements, sizeof(stack_elem));
-	s->kanar1 = KANAR;
-	s->kanar2 = KANAR;
-	s->current = 0;
-	s->amount_of_elements = amount_of_elements;
-	s->hashsum = s->kanar1 + s->kanar2 + amount_of_elements;
-	int i = 0;
-	for (i = 0; i < amount_of_elements; i++) s->elements[i] = POISON;
+	DYNAMIC_STACK_OK,
+	DYNAMIC_STACK_NO_MEMORY,
+	DYNAMIC_STACK_OVERFLOW,
+	DYNAMIC_STACK_FULL,
+	DYNAMIC_STACK_POP_FROM_EMPTY,
+	DYNAMIC_STACK_OK_BUT_ONE_FREE_BLOCK,
 	
-	#ifdef DEBUG
-	assert(!stack_check(s));
-	#endif
-	return s;
+} dynamic_stack_error_code;
+
+
+dynamic_stack* dynamic_stack_Construct();
+int dynamic_stack_Destroy(dynamic_stack* ds);
+
+int dynamic_stack_Dump(dynamic_stack* ds, FILE* fout, const char* dynamic_stack_name);
+int dynamic_stack_check(dynamic_stack* ds);
+const char* dynamic_stack_meaning_of_error_code(int error_code);
+void dynamic_stack_error_print(int error_code);
+
+int dynamic_stack_Push(dynamic_stack* ds, dynamic_stack_t value);
+dynamic_stack_t dynamic_stack_Pop(dynamic_stack* ds);
+
+int is_full(dynamic_stack* ds);
+int dynamic_stack_expand(dynamic_stack* ds);
+int dynamic_stack_reduce(dynamic_stack* ds);
+
+
+dynamic_stack* dynamic_stack_Construct()
+{
+	dynamic_stack* ds = (dynamic_stack* )calloc(1, sizeof(dynamic_stack));
+	if (!ds)
+		return NULL;
+	
+	ds->current = 0;
+	ds->amount_of_allocated_blocks = 1;
+	ds->data = (dynamic_stack_t* )calloc(DYNAMIC_STACK_DEFAULT_SIZE, sizeof(dynamic_stack_t));
+	for (int i = 0; i < ds->amount_of_allocated_blocks*DYNAMIC_STACK_DEFAULT_SIZE; i++)
+		ds->data[i] = DYNAMIC_STACK_POISON;
+	
+	return ds;
 }
 
-int stack_Destroy(stack* s)
+int dynamic_stack_Destroy(dynamic_stack* ds)
 {
 	#ifdef DEBUG
-	assert(s);
+	assert(ds);
 	#endif
-	int error_code = stack_check(s);
-	for(int i = 0; i < s->current; i++) s->elements[i] = POISON;
-	free(s->elements);
-	free(s);
+	if (ds->data)
+		free(ds->data);
+	free(ds);
+
+	return DYNAMIC_STACK_OK;
+}
+
+int dynamic_stack_Dump(dynamic_stack* ds, FILE* fout, const char* dynamic_stack_name)
+{
+	fprintf(fout, "Dynamic stack \"%s\"[%s] dump:\n{\n", dynamic_stack_name, dynamic_stack_meaning_of_error_code(dynamic_stack_check(ds)));
+	fprintf(fout, "	current: %d\n	blocks: %d\n\n", ds->current, ds->amount_of_allocated_blocks);
+	for (int i = 0; i < ds->amount_of_allocated_blocks*DYNAMIC_STACK_DEFAULT_SIZE; i++)
+		if (ds->data[i] != DYNAMIC_STACK_POISON)
+			fprintf(fout, "	data[%d]:	%d\n", i, ds->data[i]);
+		else
+			fprintf(fout, "	data[%d]:	DYNAMIC_STACK_POISON\n", i);
+	fprintf(fout, "}\n\n");
 	
-	return error_code;
 	return 0;
 }
 
-int stack_Push(stack* s, stack_elem value)
+int dynamic_stack_Push(dynamic_stack* ds, dynamic_stack_t value)
 {
 	#ifdef DEBUG
-	assert(s);
+	assert(ds);
+	assert(ds->data);
 	#endif
 	
-	if (s->current < s->amount_of_elements)
-	{
-		s->elements[s->current] = value;
-		s->current++;
-		s->hashsum = stack_calc_hashsum(s);
-		return stack_check(s);
-		return 0;
-	}
-	else
+	ds->data[ds->current] = value;
+	ds->current++;
+	
+	return dynamic_stack_check(ds);
+}
+
+dynamic_stack_t dynamic_stack_Pop(dynamic_stack* ds)
+{
+	#ifdef DEBUG
+	assert(ds);
+	assert(ds->data);
+	#endif
+	if (ds->current < 1)
 	{
 		#ifdef DEBUG
-		stack_help(ERROR_PUSH_TO_FULL_STACK);
+		dynamic_stack_error_print(DYNAMIC_STACK_POP_FROM_EMPTY);
+		assert(0);
 		#endif
-		return ERROR_PUSH_TO_FULL_STACK;
+		return DYNAMIC_STACK_POISON;
 	}
+	ds->current--;
+	dynamic_stack_t tmp = ds->data[ds->current];
+	ds->data[ds->current] = DYNAMIC_STACK_POISON;
+	return tmp;
 }
 
-stack_elem stack_Pop(stack* s)
+int is_full(dynamic_stack* ds)
 {
-	#ifdef DEBUG
-	assert(s);
-	#endif
-	if (s->current > 0)
-	{
-		stack_elem value = s->elements[s->current-1];
-		s->current--;
-		s->elements[s->current] = POISON;
-		
-		s->hashsum = stack_calc_hashsum(s);
-		return value;
-	}
+	
+	if (ds->current == ds->amount_of_allocated_blocks*DYNAMIC_STACK_DEFAULT_SIZE)
+		return DYNAMIC_STACK_FULL;
+	else if (ds->current > ds->amount_of_allocated_blocks*DYNAMIC_STACK_DEFAULT_SIZE)
+		return DYNAMIC_STACK_OVERFLOW;
+	else if (ds->current < ds->amount_of_allocated_blocks*DYNAMIC_STACK_DEFAULT_SIZE && ds->current >= (ds->amount_of_allocated_blocks - 1)*DYNAMIC_STACK_DEFAULT_SIZE)
+		return DYNAMIC_STACK_OK;
 	else
+		return DYNAMIC_STACK_OK_BUT_ONE_FREE_BLOCK;
+}
+
+int dynamic_stack_check(dynamic_stack* ds)
+{
+	switch (is_full(ds))
 	{
-		#ifdef DEBUG
-		stack_help(ERROR_POP_FROM_EMPTY_STACK);
-		#endif
-		return POISON;
+		case DYNAMIC_STACK_FULL:
+		{
+			dynamic_stack_expand(ds);
+			break;
+		}
+		case DYNAMIC_STACK_OK:
+		{
+			break;
+		}
+		case DYNAMIC_STACK_OVERFLOW:
+		{
+			#ifdef DEBUG
+			dynamic_stack_error_print(DYNAMIC_STACK_OVERFLOW);
+			assert(0);
+			#endif
+			return DYNAMIC_STACK_OVERFLOW;
+			break;
+		}
+		case DYNAMIC_STACK_OK_BUT_ONE_FREE_BLOCK:
+		{
+			dynamic_stack_reduce(ds);
+			break;
+		}
+		default: assert(0);
 	}
+	
+	return DYNAMIC_STACK_OK;
 }
 
-int	stack_calc_hashsum(stack* s)
+int dynamic_stack_expand(dynamic_stack* ds)
 {
-	#ifdef DEBUG
-	assert(s);
-	#endif
-	int hashsum = s->kanar1 + s->kanar2 + s->current + s->amount_of_elements;
-	int i = 0;
-	for (i = 0; i < s->current; i++) hashsum += s->elements[i];
-	
-	return hashsum;
+	dynamic_stack_t* tmp = malloc(ds->amount_of_allocated_blocks*DYNAMIC_STACK_DEFAULT_SIZE*sizeof(dynamic_stack_t));
+	for (int i = 0; i < ds->amount_of_allocated_blocks*DYNAMIC_STACK_DEFAULT_SIZE; i++)
+		tmp[i] = ds->data[i];
+	free(ds->data);
+	ds->amount_of_allocated_blocks++;
+	ds->data = (dynamic_stack_t* )malloc(ds->amount_of_allocated_blocks*DYNAMIC_STACK_DEFAULT_SIZE*sizeof(dynamic_stack_t));
+	for (int i = 0; i < (ds->amount_of_allocated_blocks - 1)*DYNAMIC_STACK_DEFAULT_SIZE; i++)
+		ds->data[i] = tmp[i];
+	for (int i = (ds->amount_of_allocated_blocks - 1)*DYNAMIC_STACK_DEFAULT_SIZE; i < ds->amount_of_allocated_blocks*DYNAMIC_STACK_DEFAULT_SIZE; i++)
+		ds->data[i] = DYNAMIC_STACK_POISON;
+	return dynamic_stack_check(ds);
 }
 
-stack_error_code	stack_check(stack* s)
+const char* dynamic_stack_meaning_of_error_code(int error_code)
 {
-	if (s->elements[s->current] != POISON) return STACK_TAIL_IS_NOT_POISON;
-	if (s->current >= s->amount_of_elements) return STACK_CURRENT_MORE_THAN_LENGTH;
-	for (int i = 0; i < s->current - 1; i++) if (s->elements[i] == POISON) return STACK_ELEMENT_IS_POISON;
-	if (s->hashsum != stack_calc_hashsum(s)) return STACK_HASHSUM_ERROR;
-	
-	return STACK_OK;
-}
-
-char* stack_error_message(stack_error_code error_code)
-{
-	
-	#define RET_CODE_(code)  case code: return #code;
-	
 	switch (error_code)
 	{
-		RET_CODE_ (STACK_OK)
-		RET_CODE_ (STACK_TAIL_IS_NOT_POISON)
-		RET_CODE_ (STACK_ELEMENT_IS_POISON)
-		RET_CODE_ (STACK_HASHSUM_ERROR)
-		RET_CODE_ (ERROR_POP_FROM_EMPTY_STACK)
-		RET_CODE_ (ERROR_PUSH_TO_FULL_STACK)
-		RET_CODE_ (STACK_CURRENT_MORE_THAN_LENGTH)
-		RET_CODE_ (STACK_GET_FROM_INVALID_INDEX)
-		default: return "STACK_UNKNOWN_ERROR";
+		#define _RET_CODE(code) case code: return #code
+		
+		_RET_CODE(DYNAMIC_STACK_OK);
+		_RET_CODE(DYNAMIC_STACK_NO_MEMORY);
+		_RET_CODE(DYNAMIC_STACK_OVERFLOW);
+		_RET_CODE(DYNAMIC_STACK_POP_FROM_EMPTY);
+		_RET_CODE(DYNAMIC_STACK_FULL);
+		_RET_CODE(DYNAMIC_STACK_OK_BUT_ONE_FREE_BLOCK);
+		default: return "DYNAMIC_STACK_UNDEFINED_ERROR";
+		
+		#undef _RET_CODE
 	}
-	
-	#undef RET_CODE_
-	
-}
-void stack_help(stack_error_code error_code)
-{
-	printf("%s\n", stack_error_message(error_code));
 }
 
-void stack_print_dump(stack* s)
+void dynamic_stack_error_print(int error_code)
 {
-	FILE* dump = fopen("stack_dump.txt", "w");
-	
-	fprintf(dump,
-	"stack \"s\" (%s) [%p] {\n"
-	"	current = %d\n\n", stack_error_message(stack_check(s)), s, s->current);
-	
-	for (int i = 0; i < s->current; i++) fprintf(dump, "	elements[%d]: %lg\n", i, s->elements[i]);
-	fprintf(dump, "}\n");
-	
-	fclose(dump);
+	printf("%s\n", dynamic_stack_meaning_of_error_code(error_code));
 }
 
-void stack_dump(stack* s, const char* dump_name)
-{
-	FILE* dump = fopen(dump_name, "w");
-	
-	fprintf(dump,
-	"stack \"s\" (%s) [%p] {\n"
-	"	current = %d\n\n", stack_error_message(stack_check(s)), s, s->current);
-	
-	for (int i = 0; i < s->current; i++) fprintf(dump, "	elements[%d]: %lg\n", i, s->elements[i]);
-	fprintf(dump, "}\n");
-	
-	fclose(dump);
-}
-
-int terminate_message(int error)
-{
-	printf("\aProgram terminated with error message: %d\n" "Meow.\n", error);
-	return error;
-}
-
-stack_elem	stack_Get(stack* s, int n)
+int dynamic_stack_reduce(dynamic_stack* ds)
 {
 	#ifdef DEBUG
-	assert(s);
+	assert(ds);
+	assert(ds->data);
 	#endif
-	if (n > 0 && n <= s->current)
-	{
-		return s->elements[s->current - n];
-	}
-	else
-	{
-		#ifdef DEBUG
-		stack_help(STACK_GET_FROM_INVALID_INDEX);
-		#endif
-		printf("element: %d\n", s->current - n);
-		return POISON;
-	}
+	dynamic_stack_t* tmp = (dynamic_stack_t* )malloc((ds->amount_of_allocated_blocks - 1)*DYNAMIC_STACK_DEFAULT_SIZE*sizeof(dynamic_stack_t));
+	for (int i = 0; i < (ds->amount_of_allocated_blocks - 1)*DYNAMIC_STACK_DEFAULT_SIZE; i++)
+		tmp[i] = ds->data[i];
+	
+	free(ds->data);
+	ds->amount_of_allocated_blocks--;
+	ds->data = tmp;
+	
+	return dynamic_stack_check(ds);
 }
-
 
 
 typedef int body_t;
@@ -249,9 +239,9 @@ typedef struct bn_s
 	int amount_of_allocated_blocks;
 	char sign;
 } bn;
-//~ enum bn_codes {
-   //~ BN_OK = 0, BN_NULL_OBJECT, BN_NO_MEMORY, BN_DIVIDE_BY_ZERO
-//~ };
+enum bn_codes {
+   BN_OK = 0, BN_NULL_OBJECT, BN_NO_MEMORY, BN_DIVIDE_BY_ZERO
+};
 
 bn* bn_new()
 {
@@ -431,7 +421,6 @@ int bn_cmp(bn const *left, bn const *right)
 			}
 			else
 			{
-				//сравнение поразрядно
 				for (int i = 0; i < left->bodysize; i++)
 				{
 					if (left->body[left->bodysize - 1 - i] > right->body[right->bodysize - 1 - i])
@@ -474,7 +463,7 @@ int bn_cmp(bn const *left, bn const *right)
 			}
 		}
 	}
-	else
+	else if (left->sign*right->sign == -1)
 	{
 		if (left->sign > 0)
 		{
@@ -485,11 +474,37 @@ int bn_cmp(bn const *left, bn const *right)
 			return -1;
 		}
 	}
+	else
+	{
+		if (left->sign > 0)
+		{
+			return 1;
+		}
+		else if (left->sign < 0)
+		{
+			return -1;
+		}
+		else
+		{
+			if (right->sign > 0)
+			{
+				return -1;
+			}
+			else if (right->sign < 0)
+			{
+				return 1;
+			}
+			else
+			{
+				return 0;
+			}
+		}
+	}
 	
 	assert(0);
 }
 
-int bn_neg(bn *t) // Изменить знак на противоположный
+int bn_neg(bn *t) // Изменить знак на противоположный
 {
 	#ifdef DEBUG
 	_BN_ASSERT(t);
@@ -650,6 +665,11 @@ int bn_add_to(bn *t, bn const *right)
 			{
 				t->sign = 0;
 				for (int i = 0; i < t->bodysize; i++) t->body[i] = 0;
+				//~ bn_delete(abs_t);
+				//~ bn_delete(abs_right);
+				//~ bn_delete(t);
+				//~ t = bn_new();
+				//~ return BN_OK;
 				break;
 			}
 			default: assert(0);
@@ -778,30 +798,6 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 		return BN_NULL_OBJECT;
 	//Деление столбиком
 	
-	//Сравнить длину делимого и делителя
-		//если длина делителя больше
-			//выходит ноль
-		//иначе
-			//отсечь от делимого часть, длина которой равна длине делителя
-			//если по модулю отсеченная часть меньше модуля делителя
-				//приписать следующую цифру
-			
-			//все оставшиеся цифры класть в стек st
-			
-			//перебор числа premul:
-			//пока premul < x
-				//premul += abs_right
-				//i++
-			//класть в стек i
-			
-			//если стек не пуст:
-				//x *= 10
-				//x += stack_Pop(st)
-			//иначе
-				//вытакивать результат из стека s
-				//сформировать результат
-				//оптимизация памяти
-			
 	if (right->sign == 0)
 	{
 		return BN_DIVIDE_BY_ZERO;
@@ -814,6 +810,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 		t = bn_new();
 		if (!t)
 			return BN_NO_MEMORY;
+		return BN_OK;
 	}
 	else
 	{
@@ -839,7 +836,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 				t = bn_new();
 				if (!t)
 					return BN_NO_MEMORY;
-				break;
+				return BN_OK;
 			}
 			case 0:
 			{
@@ -848,7 +845,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 				if (!t)
 					return BN_NO_MEMORY;
 				t->sign = sign_result;
-				break;
+				return BN_OK;
 			}
 			case 1:
 			{
@@ -868,21 +865,20 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 					x->body[0] = t->body[t->bodysize - 1 - right->bodysize];
 				}
 				
-				//~ _RED_DUMP(x);
 				
-				stack* st = stack_Construct(t->bodysize - x->bodysize + 1);
+				
+				dynamic_stack* st = dynamic_stack_Construct();
 				for (int i = 0; i < t->bodysize - x->bodysize; i++)
-					stack_Push(st, t->body[i]);
-				stack* s = stack_Construct(t->bodysize);
+					dynamic_stack_Push(st, t->body[i]);
 				
+				dynamic_stack* s = dynamic_stack_Construct();
 				
-				
-				while (st->current > 0 || bn_cmp(x, abs_right) != -1)
+				while (1)
 				{
-					bn* premul = bn_init(abs_right);
+					bn* premul = bn_new();
 					if (!premul)
 						return BN_NO_MEMORY;
-					int digit = 1;
+					int digit = 0;
 					while (bn_cmp(premul, x) == -1)
 					{
 						bn_add_to(premul, abs_right);
@@ -893,37 +889,36 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 						bn_sub_to(premul, abs_right);
 						digit--;
 					}
-					//~ printf("digit: %d\n", digit);
-					stack_Push(s, digit);
+					dynamic_stack_Push(s, digit);
 					
 					bn_sub_to(x, premul);
-				
-					//~ _RED_DUMP(x);
-					int placed = 0;
-					while (st->current > 0 && bn_cmp(x, abs_right) == -1)
+					
+					#ifdef DEBUG
+					if (bn_cmp(x, abs_right) == 1)
 					{
-						bn* tmp = bn_new();
-						if (!tmp)
-							return BN_NO_MEMORY;
-						bn_init_int(tmp, stack_Pop(st));
+						printf("РЕЗУЛЬТАТ ВЫЧИТАНИЯ БОЛЬШЕ ДЕЛИТЕЛЯ!\n");
+						assert(0);
+					}
+					#endif
+					
+					
+					if (st->current)
+					{
+						bn_mul_to(x, ten);
+						//~ for (int i = 0; i < x->bodysize; i++)
+							//~ x->body[x->bodysize - i] = x->body[x->bodysize - 1 - i];
+						//~ x->body[0] = 0;
 						
-						if (tmp->sign == 0 && x->sign == 0)
-						{
-							stack_Push(s, 0);
-						}
-						else
-						{
-							bn_mul_to(x, ten);
-							bn_add_to(x, tmp);
-							placed++;
-						}
-						if (placed > 1)
-							stack_Push(s, 0);
+						bn* tmp = bn_new();
+						bn_init_int(tmp, dynamic_stack_Pop(st));
+						bn_add_to(x, tmp);
 						bn_delete(tmp);
 					}
-					if (st->current == 0 && placed > 0 && bn_cmp(x, abs_right) == -1) stack_Push(s, 0);
-					//~ _RED_DUMP(x);
-					bn_delete(premul);
+					else
+					{
+						break;
+						//конец деления
+					}
 				}
 				free(t->body);
 				t->amount_of_allocated_blocks = (int)trunc(s->current / DEFAULT_SIZE) + 1;
@@ -935,14 +930,12 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 				int i = 0;
 				while (s->current > 0)
 				{
-					t->body[i] = stack_Pop(s);
+					t->body[i] = dynamic_stack_Pop(s);
 					i++;
 				}
-				//~ stack_print_dump(st);
-				//~ stack_print_dump(s);
 				
-				stack_Destroy(st);
-				stack_Destroy(s);
+				dynamic_stack_Destroy(st);
+				dynamic_stack_Destroy(s);
 				bn_delete(x);
 				break;
 			}
@@ -968,7 +961,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 	}
 	
 	return BN_OK;
-}
+};
 
 int bn_mod_to(bn *t, bn const *right)
 {
@@ -1051,8 +1044,21 @@ int bn_init_string_radix(bn *t, const char *init_string, int radix)
 	//прибавить полученное значение инициализируемому числу
 	// и так со всеми симвлоами
 	
+	const char* beginning = init_string;
+	char sign_result = 0;
+	if (init_string[0] == '-' && init_string[1] != '0')
+	{
+		sign_result = -1;
+		beginning = &init_string[1];
+	}
+	else if (init_string[0] != '0')
+	{
+		sign_result = 1;
+	}
+	
+	
 	int i = 0;
-	for (i = 0; init_string[i] != '\0'; i++);
+	for (i = 0; beginning[i] != '\0'; i++);
 	int n = i;
 	
 	for (i = 0; i < n; i++)
@@ -1061,7 +1067,7 @@ int bn_init_string_radix(bn *t, const char *init_string, int radix)
 		bn_init_int(rn, radix);
 		bn_pow_to(rn, i);
 		bn* p = bn_new();
-		#define x init_string[n - 1 - i]
+		#define x beginning[n - 1 - i]
 		if (x >= '0' && x <= '9')
 		{
 			bn_init_int(p, x - '0');
@@ -1085,11 +1091,13 @@ int bn_init_string_radix(bn *t, const char *init_string, int radix)
 		bn_delete(rn);
 	}
 	
+	t->sign = sign_result;
+	
 	//присвоить t
 	return BN_OK;
 }
 
-// Аналоги операций x = l+r (l-r, l*r, l/r, l%r)
+// Аналоги операций x = l+r (l-r, l*r, l/r, l%r)
 bn* bn_add(bn const *left, bn const *right)
 {
 	#ifdef DEBUG
@@ -1180,15 +1188,25 @@ const char *bn_to_string(bn const *t, int radix)
 	if (_NO_BN(t))
 		return NULL;
 	
-	stack* s = stack_Construct(t->bodysize);
+	//пока текущее число не ноль
+		//взять остаток от деления t на radix
+		//класть в стек
+		//делить текущее число нацело на radix
 	
-	bn* p = bn_init(t);
 	bn* bn_radix = bn_new();
 	bn_init_int(bn_radix, radix);
-	bn* digit = bn_new();
-	while (p->sign != 0)
+	
+	bn* digit = NULL;
+	
+	bn* p = bn_init(t);
+	
+	dynamic_stack* s = dynamic_stack_Construct();
+	
+	int i = 0;
+	while (bn_cmp(p, bn_radix) == 1)
 	{
 		digit = bn_mod(p, bn_radix);
+		
 		int d = 0;
 		int ten = 1;
 		for (int i = 0; i < digit->bodysize; i++)
@@ -1196,27 +1214,29 @@ const char *bn_to_string(bn const *t, int radix)
 			d += digit->body[i]*ten;
 			ten *= 10;
 		}
-		stack_Push(s, d);
-		bn_delete(digit);
+		dynamic_stack_Push(s, d);
+		
 		bn_div_to(p, bn_radix);
-	}
-	
-	
-	char* outs = (char* )calloc(t->bodysize, sizeof(char));
-	int i = 0;
-	while (s->current)
-	{
-		outs[i] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[(int)stack_Pop(s)];
+		bn_delete(digit);
 		i++;
+		printf("i = %d\n", i);
 	}
+	if (bn_cmp(p, bn_radix) == 0)
+	{
+		dynamic_stack_Push(s, 0);
+		dynamic_stack_Push(s, 1);
+	}
+	char* outs = (char* )malloc((s->current + 1)*sizeof(char));
+	int n = s->current;
+	outs[n] = '\0';
+	for (int i = 0; i < n; i++)
+		outs[i] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[(int)dynamic_stack_Pop(s)];
 	
-	stack_Destroy(s);
-	//пока текущее число не ноль
-		//взять остаток от деления t на radix
-		//класть в стек
-		//делить текущее число нацело на radix
+	dynamic_stack_Destroy(s);
+	
 	return outs;
 }
+
 
 
 // Извлечь корень степени reciprocal из BN (бонусная функция)
@@ -1257,7 +1277,7 @@ int bn_root_to(bn *t, int reciprocal)
 	bn_delete(base_powered);
 	int n = i + 1;
 	
-	stack* s = stack_Construct(n);
+	dynamic_stack* s = dynamic_stack_Construct();
 	
 	bn* bn_olds = bn_new();
 	for (int i = 0; i < n; i++)
@@ -1289,7 +1309,7 @@ int bn_root_to(bn *t, int reciprocal)
 			bn_add_to(bn_N_reced, bn_olds);
 			bn_pow_to(bn_N_reced, reciprocal);
 		}
-		stack_Push(s, j - 1);
+		dynamic_stack_Push(s, j - 1);
 		bn_delete(ten_powered);
 		
 		if (bn_N_pred)
@@ -1305,10 +1325,10 @@ int bn_root_to(bn *t, int reciprocal)
 	t->amount_of_allocated_blocks = trunc(t->bodysize / DEFAULT_SIZE) + 1;
 	t->body = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
 	int k = 0;
-	while (s->current) t->body[k++] = stack_Pop(s);
+	while (s->current) t->body[k++] = dynamic_stack_Pop(s);
 	
 	bn_delete(ten);
 	bn_delete(base);
-	stack_Destroy(s);
+	dynamic_stack_Destroy(s);
 	return BN_OK;
 }
