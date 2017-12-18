@@ -8,7 +8,7 @@
 
 #define DEFAULT_SIZE 8
 #define DYNAMIC_STACK_POISON -111
-//~ #define DEBUG
+#define DEBUG
 #define _RED_DUMP(the_bn) printf("\033[1;31m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _GREEN_DUMP(the_bn) printf("\033[1;32m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _BEEP printf("\a")
@@ -295,6 +295,19 @@ int bn_size_status(bn* t)
 }
 
 
+void bn_dump(bn* b, FILE* f)
+{
+	#ifdef DEBUG
+	_BN_ASSERT(b);
+	#endif
+	fprintf(f, "bn's [%p] dump.\n{\nbodysize: %d\nbody: ", b, b->bodysize);
+	
+	for (int i = 0; i < b->amount_of_allocated_blocks*DEFAULT_SIZE; i++)
+		fprintf(f, "%d", b->body[b->amount_of_allocated_blocks*DEFAULT_SIZE - 1 - i]);
+		
+	fprintf(f,"\namount of allocated blocks: %d\nsign: %d\n}\n", b->amount_of_allocated_blocks, b->sign);
+}
+
 int bn_check(bn* t)
 {
 	switch (bn_size_status(t))
@@ -311,6 +324,7 @@ int bn_check(bn* t)
 		}
 		case BN_BODY_OVERFLOW:
 		{
+			_GREEN_DUMP(t);
 			#ifdef DEBUG
 			assert(0);
 			#endif
@@ -318,6 +332,7 @@ int bn_check(bn* t)
 		}
 		default: break;
 	}
+	
 	return BN_OK;
 }
 
@@ -661,18 +676,6 @@ int bn_sign(bn const *t) //-1 если t<0; 0 если t = 0, 1 если t>0
 }
 
 
-void bn_dump(bn* b, FILE* f)
-{
-	#ifdef DEBUG
-	_BN_ASSERT(b);
-	#endif
-	fprintf(f, "bn's [%p] dump.\n{\nbodysize: %d\nbody: ", b, b->bodysize);
-	
-	for (int i = 0; i < b->amount_of_allocated_blocks*DEFAULT_SIZE; i++)
-		fprintf(f, "%d", b->body[b->amount_of_allocated_blocks*DEFAULT_SIZE - 1 - i]);
-		
-	fprintf(f,"\namount of allocated blocks: %d\nsign: %d\n}\n", b->amount_of_allocated_blocks, b->sign);
-}
 
 // Операции, аналогичные +=, -=, *=, /=, %=
 int bn_add_to(bn *t, bn const *right)
@@ -921,7 +924,7 @@ int bn_mul_to(bn *t, bn const *right)
 	return bn_check(t);
 }
 
-int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО ДЕЛЕНИЕ ПРИ ОТРИЦАТЕЛЬНЫЗ ЧИСТАХ НЕ ВСЕГДА РАБАОТЕТ
+int bn_div_to(bn *t, bn const *right)
 {
 	#ifdef DEBUG
 	_BN_ASSERT(t);
@@ -937,6 +940,11 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 	}
 	
 	char sign_result = t->sign * right->sign;
+	
+	char flag = 0;
+	if (sign_result == -1)
+		flag = 1;
+	
 	if (right->bodysize > t->bodysize)
 	{
 		free(t->body);
@@ -975,6 +983,12 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 				t->sign = 0;
 				t->amount_of_allocated_blocks = 1;
 				
+				if (flag)
+				{
+					t->body[0] = 1;
+					t->sign = -1;
+				}
+				
 				break;
 			}
 			case 0:
@@ -995,7 +1009,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 				if (!x)
 					return BN_NO_MEMORY;
 				free(x->body);
-				x->body = (body_t* )calloc(abs_right->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+				x->body = (body_t* )calloc(abs_t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
 				x->sign = 1;
 				
 				for (int i = 0; i < right->bodysize; i++)
@@ -1104,6 +1118,10 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 				
 				dynamic_stack_Destroy(st);
 				dynamic_stack_Destroy(s);
+				
+				if (flag && x->sign != 0)
+					bn_sub_to(t, one);
+				
 				bn_delete(x);
 				break;
 			}
@@ -1128,6 +1146,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 		//~ t->body = tmp;
 	//~ }
 	
+	_RED_DUMP(t);
 	return bn_check(t);
 };
 
@@ -1146,6 +1165,8 @@ int bn_mod_to(bn *t, bn const *right)
 	bn_div_to(tmp, right);
 	bn_mul_to(tmp, right);
 	bn_sub_to(t, tmp);
+	if (t->sign)
+		t->sign = right->sign;
 	
 	bn_delete(tmp);
 	return bn_check(t);
@@ -1380,6 +1401,7 @@ const char *bn_to_string(bn const *t, int radix)
 		bn* digit = NULL;
 		
 		bn* p = bn_init(t);
+		bn_abs(p);
 
 		dynamic_stack* s = dynamic_stack_Construct();
 		
@@ -1427,7 +1449,9 @@ const char *bn_to_string(bn const *t, int radix)
 	}
 	else
 	{
-		outs = "0";
+		outs = (char* )malloc(2*sizeof(char));
+		outs[0] = '0';
+		outs[1] = '\0';
 	}
 	
 	
