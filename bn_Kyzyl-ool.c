@@ -18,7 +18,7 @@
 
 #define DYNAMIC_STACK_DEFAULT_SIZE 256
 
-typedef char dynamic_stack_t;
+typedef int dynamic_stack_t;
 typedef struct dynamic_stack
 {
 	dynamic_stack_t* data;
@@ -229,12 +229,13 @@ int dynamic_stack_reduce(dynamic_stack* ds)
 	return dynamic_stack_check(ds);
 }
 
-typedef char body_t;
+
+typedef int body_t;
 typedef struct bn_s
 {
+	char sign;
 	body_t* body;
 	int bodysize;
-	char sign;
 	int amount_of_allocated_blocks;
 } bn;
 enum bn_codes {
@@ -411,6 +412,10 @@ int bn_init_string(bn *t, const char *init_string)
 	{
 		number = init_string;
 		t->sign = 1;
+	}
+	if (number[0] == '0')
+	{
+		t->sign = 0;
 	}
 	int i = 0;
 	while (number[i] != '\0') i++;
@@ -776,15 +781,11 @@ int bn_add_to(bn *t, bn const *right)
 			}
 			case 0:
 			{
-				for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++)
-					t->body[i] = 0;
-				t->sign = 0;
+				free(t->body);
+				t->amount_of_allocated_blocks = 1;
 				t->bodysize = 1;
-				//~ free(t->body);
-				//~ t->amount_of_allocated_blocks = 1;
-				//~ t->bodysize = 1;
-				//~ t->sign = 0;
-				//~ t->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
+				t->sign = 0;
+				t->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
 				
 				bn_delete(abs_t);
 				bn_delete(abs_right);
@@ -862,7 +863,7 @@ int bn_mul_to(bn *t, bn const *right)
 	
 	//умножение столбиком (по старой схеме)
 	
-	int sign_result = t->sign * right->sign;
+	char sign_result = t->sign * right->sign;
 	if (t->body[0] == 1 && t->bodysize == 1)
 	{
 		free(t->body);
@@ -871,33 +872,33 @@ int bn_mul_to(bn *t, bn const *right)
 		t->bodysize = right->bodysize;
 		t->amount_of_allocated_blocks = right->amount_of_allocated_blocks;
 		t->sign = sign_result;
+		
+		return BN_OK;
 	}
 	else if (right->body[0] == 1 && right->bodysize == 1)
 	{
 		t->sign = sign_result;
-	}
-	else
-	{
-		int amount_of_blocks = t->amount_of_allocated_blocks + right->amount_of_allocated_blocks + 1;
-		body_t* mul_result = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
-		if (!mul_result)
-			return BN_NO_MEMORY;
-
-		for (int i = 0; i < right->bodysize; i++)
-		{
-			for (int j = 0; j < t->bodysize; j++)
-			{
-				mul_result[i+j] += t->body[j]*right->body[i];
-				//~ printf("i = %d\n", i);
-				//~ printf("j = %d\n\n", j);
-			}
-		}
-		t->sign = sign_result;
-		free(t->body);
-		t->body = mul_result;
-		t->amount_of_allocated_blocks = amount_of_blocks;
+		return BN_OK;
 	}
 	
+	int amount_of_blocks = t->amount_of_allocated_blocks + right->amount_of_allocated_blocks + 1;
+	body_t* mul_result = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
+	if (!mul_result)
+		return BN_NO_MEMORY;
+
+	for (int i = 0; i < right->bodysize; i++)
+	{
+		for (int j = 0; j < t->bodysize; j++)
+		{
+			mul_result[i+j] += t->body[j]*right->body[i];
+			//~ printf("i = %d\n", i);
+			//~ printf("j = %d\n\n", j);
+		}
+	}
+	t->sign = sign_result;
+	free(t->body);
+	t->body = mul_result;
+	t->amount_of_allocated_blocks = amount_of_blocks;
 	_BN_STABILIZE(t);
 	
 	//~ #ifdef DEBUG
@@ -935,7 +936,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 		return BN_DIVIDE_BY_ZERO;
 	}
 	
-	int sign_result = t->sign * right->sign;
+	char sign_result = t->sign * right->sign;
 	if (right->bodysize > t->bodysize)
 	{
 		free(t->body);
@@ -945,6 +946,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 		t->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
 		if (!t)
 			return BN_NO_MEMORY;
+		return BN_OK;
 	}
 	else
 	{
@@ -1369,43 +1371,64 @@ const char *bn_to_string(bn const *t, int radix)
 		//класть в стек
 		//делить текущее число нацело на radix
 	
-	bn* bn_radix = bn_new();
-	bn_init_int(bn_radix, radix);
-	
-	bn* digit = NULL;
-	
-	bn* p = bn_init(t);
-
-	dynamic_stack* s = dynamic_stack_Construct();
-	
-	int i = 0;
-	while (p->sign != 0)
+	char* outs = NULL;
+	if (t->sign != 0)
 	{
-		digit = bn_mod(p, bn_radix);
-		int d = 0;
-		int ten = 1;
-		for (int i = 0; i < digit->bodysize; i++)
-		{
-			d += digit->body[i]*ten;
-			ten *= 10;
-		}
-		dynamic_stack_Push(s, d);
+		bn* bn_radix = bn_new();
+		bn_init_int(bn_radix, radix);
 		
-		bn_div_to(p, bn_radix);
-		bn_delete(digit);
-		i++;
-		//~ printf("i = %d\n", i);
-	}
+		bn* digit = NULL;
+		
+		bn* p = bn_init(t);
 
-	char* outs = (char* )malloc((s->current + 1)*sizeof(char));
-	int n = s->current;
-	outs[n] = '\0';
-	for (int i = 0; s->current; i++)
-		outs[i] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[(int)dynamic_stack_Pop(s)];
-	
-	dynamic_stack_Destroy(s);
-	bn_delete(bn_radix);
-	bn_delete(p);
+		dynamic_stack* s = dynamic_stack_Construct();
+		
+		int i = 0;
+		while (p->sign != 0)
+		{
+			digit = bn_mod(p, bn_radix);
+			int d = 0;
+			int ten = 1;
+			for (int i = 0; i < digit->bodysize; i++)
+			{
+				d += digit->body[i]*ten;
+				ten *= 10;
+			}
+			dynamic_stack_Push(s, d);
+			
+			bn_div_to(p, bn_radix);
+			bn_delete(digit);
+			i++;
+			//~ printf("i = %d\n", i);
+		}
+
+		outs = (char* )malloc((s->current + 2)*sizeof(char));
+		int n = s->current;
+		if (t->sign < 0)
+		{
+			i = 1;
+			outs[0] = '-';
+			outs[n+1] = '\0';
+		}
+		else
+		{
+			i = 0;
+			outs[n] = '\0';
+		}
+		while (s->current)
+		{
+			outs[i] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[(int)dynamic_stack_Pop(s)];
+			i++;
+		}
+		
+		dynamic_stack_Destroy(s);
+		bn_delete(bn_radix);
+		bn_delete(p);
+	}
+	else
+	{
+		outs = "0";
+	}
 	
 	
 	return outs;
@@ -1506,5 +1529,3 @@ int bn_root_to(bn *t, int reciprocal)
 	dynamic_stack_Destroy(s);
 	return BN_OK;
 }
-
-
