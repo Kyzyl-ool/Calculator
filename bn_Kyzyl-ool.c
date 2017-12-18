@@ -6,9 +6,9 @@
 #include "bn.h"
 #endif
 
-#define DEFAULT_SIZE 4
+#define DEFAULT_SIZE 8
 #define DYNAMIC_STACK_POISON -111
-#define DEBUG
+//~ #define DEBUG
 #define _RED_DUMP(the_bn) printf("\033[1;31m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _GREEN_DUMP(the_bn) printf("\033[1;32m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _BEEP printf("\a")
@@ -18,7 +18,7 @@
 
 #define DYNAMIC_STACK_DEFAULT_SIZE 256
 
-typedef int dynamic_stack_t;
+typedef char dynamic_stack_t;
 typedef struct dynamic_stack
 {
 	dynamic_stack_t* data;
@@ -229,14 +229,13 @@ int dynamic_stack_reduce(dynamic_stack* ds)
 	return dynamic_stack_check(ds);
 }
 
-
-typedef int body_t;
+typedef char body_t;
 typedef struct bn_s
 {
 	body_t* body;
 	int bodysize;
-	int amount_of_allocated_blocks;
 	char sign;
+	int amount_of_allocated_blocks;
 } bn;
 enum bn_codes {
    BN_OK = 0,
@@ -777,11 +776,15 @@ int bn_add_to(bn *t, bn const *right)
 			}
 			case 0:
 			{
-				free(t->body);
-				t->amount_of_allocated_blocks = 1;
-				t->bodysize = 1;
+				for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++)
+					t->body[i] = 0;
 				t->sign = 0;
-				t->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
+				t->bodysize = 1;
+				//~ free(t->body);
+				//~ t->amount_of_allocated_blocks = 1;
+				//~ t->bodysize = 1;
+				//~ t->sign = 0;
+				//~ t->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
 				
 				bn_delete(abs_t);
 				bn_delete(abs_right);
@@ -868,33 +871,33 @@ int bn_mul_to(bn *t, bn const *right)
 		t->bodysize = right->bodysize;
 		t->amount_of_allocated_blocks = right->amount_of_allocated_blocks;
 		t->sign = sign_result;
-		
-		return BN_OK;
 	}
 	else if (right->body[0] == 1 && right->bodysize == 1)
 	{
 		t->sign = sign_result;
-		return BN_OK;
+	}
+	else
+	{
+		int amount_of_blocks = t->amount_of_allocated_blocks + right->amount_of_allocated_blocks + 1;
+		body_t* mul_result = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
+		if (!mul_result)
+			return BN_NO_MEMORY;
+
+		for (int i = 0; i < right->bodysize; i++)
+		{
+			for (int j = 0; j < t->bodysize; j++)
+			{
+				mul_result[i+j] += t->body[j]*right->body[i];
+				//~ printf("i = %d\n", i);
+				//~ printf("j = %d\n\n", j);
+			}
+		}
+		t->sign = sign_result;
+		free(t->body);
+		t->body = mul_result;
+		t->amount_of_allocated_blocks = amount_of_blocks;
 	}
 	
-	int amount_of_blocks = t->amount_of_allocated_blocks + right->amount_of_allocated_blocks + 1;
-	body_t* mul_result = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
-	if (!mul_result)
-		return BN_NO_MEMORY;
-
-	for (int i = 0; i < right->bodysize; i++)
-	{
-		for (int j = 0; j < t->bodysize; j++)
-		{
-			mul_result[i+j] += t->body[j]*right->body[i];
-			//~ printf("i = %d\n", i);
-			//~ printf("j = %d\n\n", j);
-		}
-	}
-	t->sign = sign_result;
-	free(t->body);
-	t->body = mul_result;
-	t->amount_of_allocated_blocks = amount_of_blocks;
 	_BN_STABILIZE(t);
 	
 	//~ #ifdef DEBUG
@@ -942,7 +945,6 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 		t->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
 		if (!t)
 			return BN_NO_MEMORY;
-		return BN_OK;
 	}
 	else
 	{
@@ -1377,7 +1379,7 @@ const char *bn_to_string(bn const *t, int radix)
 	dynamic_stack* s = dynamic_stack_Construct();
 	
 	int i = 0;
-	while (bn_cmp(p, bn_radix) == 1)
+	while (p->sign != 0)
 	{
 		digit = bn_mod(p, bn_radix);
 		int d = 0;
@@ -1392,17 +1394,13 @@ const char *bn_to_string(bn const *t, int radix)
 		bn_div_to(p, bn_radix);
 		bn_delete(digit);
 		i++;
-		printf("i = %d\n", i);
+		//~ printf("i = %d\n", i);
 	}
-	if (bn_cmp(p, bn_radix) == 0)
-	{
-		dynamic_stack_Push(s, 0);
-		dynamic_stack_Push(s, 1);
-	}
+
 	char* outs = (char* )malloc((s->current + 1)*sizeof(char));
 	int n = s->current;
 	outs[n] = '\0';
-	for (int i = 0; i < n; i++)
+	for (int i = 0; s->current; i++)
 		outs[i] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[(int)dynamic_stack_Pop(s)];
 	
 	dynamic_stack_Destroy(s);
