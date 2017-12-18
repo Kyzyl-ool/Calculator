@@ -6,18 +6,17 @@
 #include "bn.h"
 #endif
 
-#define DEFAULT_SIZE 8
+#define DEFAULT_SIZE 4
 #define DYNAMIC_STACK_POISON -111
-//~ #define DEBUG
+#define DEBUG
 #define _RED_DUMP(the_bn) printf("\033[1;31m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _GREEN_DUMP(the_bn) printf("\033[1;32m"); bn_dump(the_bn, stdout); printf("\033[0m")
 #define _BEEP printf("\a")
 #define _BN_ASSERT(the_bn) assert(the_bn); assert(the_bn->body)
 #define _NO_BN(the_bn) !the_bn || !the_bn->body
-#define _BN_STABILIZE(t) for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++){if (t->body[i] > 9) { t->body[i+1] += t->body[i] / 10; t->body[i] %= 10; } while (t->body[i] < 0) { t->body[i] += 10; t->body[i+1]--; } } t->bodysize = 0; for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++) { if (t->body[i] != 0) t->bodysize = i + 1; } if (t->bodysize == 0) t->sign = 0
+#define _BN_STABILIZE(t) for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++) {if (t->body[i] > 9) { t->body[i+1] += t->body[i] / 10; t->body[i] %= 10; } while (t->body[i] < 0) { t->body[i] += 10; t->body[i+1]--; } } t->bodysize = 0; for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++) { if (t->body[i] != 0) t->bodysize = i + 1; } if (t->bodysize == 0) { t->sign = 0; t->bodysize = 1;}
 
-#define DYNAMIC_STACK_DEFAULT_SIZE 32
-
+#define DYNAMIC_STACK_DEFAULT_SIZE 256
 
 typedef int dynamic_stack_t;
 typedef struct dynamic_stack
@@ -177,7 +176,7 @@ int dynamic_stack_check(dynamic_stack* ds)
 
 int dynamic_stack_expand(dynamic_stack* ds)
 {
-	dynamic_stack_t* tmp = malloc(ds->amount_of_allocated_blocks*DYNAMIC_STACK_DEFAULT_SIZE*sizeof(dynamic_stack_t));
+	dynamic_stack_t* tmp = (dynamic_stack_t* )malloc(ds->amount_of_allocated_blocks*DYNAMIC_STACK_DEFAULT_SIZE*sizeof(dynamic_stack_t));
 	for (int i = 0; i < ds->amount_of_allocated_blocks*DYNAMIC_STACK_DEFAULT_SIZE; i++)
 		tmp[i] = ds->data[i];
 	free(ds->data);
@@ -240,8 +239,113 @@ typedef struct bn_s
 	char sign;
 } bn;
 enum bn_codes {
-   BN_OK = 0, BN_NULL_OBJECT, BN_NO_MEMORY, BN_DIVIDE_BY_ZERO
+   BN_OK = 0,
+   BN_NULL_OBJECT,
+   BN_NO_MEMORY,
+   BN_DIVIDE_BY_ZERO,
+   BN_BODY_OVERFLOW,
+   BN_BODY_FULL,
+   BN_BODY_HAS_EMPTY_BLOCKS
+   
 };
+
+void bn_expand(bn* t)
+{
+	t->amount_of_allocated_blocks++;
+	body_t* tmp = (body_t* )malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
+	for (int i = 0; i < (t->amount_of_allocated_blocks - 1)*DEFAULT_SIZE; i++)
+		tmp[i] = t->body[i];
+	for (int i = (t->amount_of_allocated_blocks - 1)*DEFAULT_SIZE; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++)
+		tmp[i] = 0;
+	free(t->body);
+	t->body = tmp;
+}
+
+void bn_reduce(bn* t)
+{
+	//~ t->amount_of_allocated_blocks--;
+	//~ body_t* tmp = (body_t* )malloc(t->amount_of_allocated_blocks*DEFAULT_SIZE*sizeof(body_t));
+	//~ for (int i = 0; i < t->amount_of_allocated_blocks*DEFAULT_SIZE; i++)
+		//~ tmp[i] = t->body[i];
+	//~ free(t->body);
+	//~ t->body = tmp;
+	
+	if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
+	{
+		t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
+		body_t* tmp = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+		for (int i = 0; i < t->bodysize; i++)
+			tmp[i] = t->body[i];
+		free(t->body);
+		t->body = tmp;
+	}
+}
+
+int bn_size_status(bn* t)
+{
+	int allocsize = t->amount_of_allocated_blocks*DEFAULT_SIZE;
+	if (t->bodysize == allocsize)
+		return BN_BODY_FULL;
+	else if (t->bodysize > allocsize)
+		return BN_BODY_OVERFLOW;
+	else if (t->bodysize < (allocsize) && t->bodysize >= (allocsize - DEFAULT_SIZE))
+		return BN_OK;
+	else
+		return BN_BODY_HAS_EMPTY_BLOCKS;
+}
+
+
+int bn_check(bn* t)
+{
+	switch (bn_size_status(t))
+	{
+		case BN_BODY_FULL:
+		{
+			bn_expand(t);
+			break;
+		}
+		case BN_BODY_HAS_EMPTY_BLOCKS:
+		{
+			bn_reduce(t);
+			break;
+		}
+		case BN_BODY_OVERFLOW:
+		{
+			#ifdef DEBUG
+			assert(0);
+			#endif
+			return BN_BODY_OVERFLOW;
+		}
+		default: break;
+	}
+	return BN_OK;
+}
+
+
+const char* bn_meaning_of_error_code(int error_code)
+{
+	switch (error_code)
+	{
+		#define _RET_CODE(code) case code: return #code
+		
+		_RET_CODE(BN_OK);
+		_RET_CODE(BN_DIVIDE_BY_ZERO);
+		_RET_CODE(BN_NO_MEMORY);
+		_RET_CODE(BN_NULL_OBJECT);
+		_RET_CODE(BN_BODY_FULL);
+		_RET_CODE(BN_BODY_HAS_EMPTY_BLOCKS);
+		_RET_CODE(BN_BODY_OVERFLOW);
+		default: return "BN_UNDEFINED_ERROR_CODE";
+		
+		#undef _RET_CODE
+	}
+}
+
+void bn_print_error(int error_code)
+{
+	printf("%s\n", bn_meaning_of_error_code(error_code));
+}
+
 
 bn* bn_new()
 {
@@ -255,7 +359,7 @@ bn* bn_new()
 		return NULL;
 	}
 	new_bn->sign = 0;
-	new_bn->bodysize = 0;
+	new_bn->bodysize = 1;
 	new_bn->amount_of_allocated_blocks = 1;
 	
 	return new_bn;
@@ -337,6 +441,16 @@ int bn_init_int(bn *t, int init_int)
 	//Брать остаток от деления на 10 и прибавлять к соответствующему разряду
 	
 	//присвоить t
+	
+	if (init_int == 0)
+	{
+		t->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
+		t->sign = 0;
+		t->amount_of_allocated_blocks = 1;
+		t->bodysize = 1;
+		return BN_OK;
+	}
+	
 	int x = init_int;
 	if (x < 0)
 	{
@@ -526,7 +640,7 @@ int bn_abs(bn *t) // Взять модуль
 		return BN_NULL_OBJECT;
 	if (t->sign < 0)
 	{
-		t->sign = -t->sign;
+		t->sign = 1;
 	}
 	return BN_OK;
 }
@@ -548,7 +662,7 @@ void bn_dump(bn* b, FILE* f)
 	#ifdef DEBUG
 	_BN_ASSERT(b);
 	#endif
-	fprintf(f, "bn's dump.\n{\nbodysize: %d\nbody: ", b->bodysize);
+	fprintf(f, "bn's [%p] dump.\n{\nbodysize: %d\nbody: ", b, b->bodysize);
 	
 	for (int i = 0; i < b->amount_of_allocated_blocks*DEFAULT_SIZE; i++)
 		fprintf(f, "%d", b->body[b->amount_of_allocated_blocks*DEFAULT_SIZE - 1 - i]);
@@ -562,6 +676,7 @@ int bn_add_to(bn *t, bn const *right)
 	#ifdef DEBUG
 	_BN_ASSERT(t);
 	_BN_ASSERT(right);
+	if (bn_check(t) != BN_OK) assert(0);
 	#endif
 	if (_NO_BN(t) || _NO_BN(right))
 		return BN_NULL_OBJECT;
@@ -571,28 +686,27 @@ int bn_add_to(bn *t, bn const *right)
 	if (right->amount_of_allocated_blocks > t->amount_of_allocated_blocks)
 	{
 		int amount_of_blocks = right->amount_of_allocated_blocks + 1;
-		bn* the_bn = t;
-		
 		body_t* tmp = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
 		if (!tmp)
 			return BN_NO_MEMORY;
-		for (int i = 0; i < the_bn->bodysize; i++) tmp[i] = the_bn->body[i]; 
-		if (the_bn->body) free(the_bn->body);
-		the_bn->body = tmp;
-		the_bn->amount_of_allocated_blocks = amount_of_blocks;
+		for (int i = 0; i < t->bodysize; i++) tmp[i] = t->body[i];
+		
+		free(t->body);
+		t->body = tmp;
+		t->amount_of_allocated_blocks = amount_of_blocks;
 	}
 	else
 	{
 		int amount_of_blocks = t->amount_of_allocated_blocks + 1;
-		bn* the_bn = t;
 		
 		body_t* tmp = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
 		if (!tmp)
 			return BN_NO_MEMORY;
-		for (int i = 0; i < the_bn->bodysize; i++) tmp[i] = the_bn->body[i]; 
-		if (the_bn->body) free(the_bn->body);
-		the_bn->body = tmp;
-		the_bn->amount_of_allocated_blocks = amount_of_blocks;
+		for (int i = 0; i < t->bodysize; i++) tmp[i] = t->body[i];
+		
+		free(t->body);
+		t->body = tmp;
+		t->amount_of_allocated_blocks = amount_of_blocks;
 	}
 	
 	
@@ -663,14 +777,15 @@ int bn_add_to(bn *t, bn const *right)
 			}
 			case 0:
 			{
+				free(t->body);
+				t->amount_of_allocated_blocks = 1;
+				t->bodysize = 1;
 				t->sign = 0;
-				for (int i = 0; i < t->bodysize; i++) t->body[i] = 0;
-				//~ bn_delete(abs_t);
-				//~ bn_delete(abs_right);
-				//~ bn_delete(t);
-				//~ t = bn_new();
-				//~ return BN_OK;
-				break;
+				t->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
+				
+				bn_delete(abs_t);
+				bn_delete(abs_right);
+				return BN_OK;
 			}
 			default: assert(0);
 		}
@@ -693,18 +808,18 @@ int bn_add_to(bn *t, bn const *right)
 		//изменить amount_of...
 	
 	
-	if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
-	{
-		t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
-		body_t* tmp = calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
-		if (!tmp)
-			return BN_NO_MEMORY;
-		for (int i = 0; i < t->bodysize; i++)
-			tmp[i] = t->body[i];
-		free(t->body);
-		t->body = tmp;
-	}
-	return BN_OK;
+	//~ if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
+	//~ {
+		//~ t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
+		//~ body_t* tmp = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+		//~ if (!tmp)
+			//~ return BN_NO_MEMORY;
+		//~ for (int i = 0; i < t->bodysize; i++)
+			//~ tmp[i] = t->body[i];
+		//~ free(t->body);
+		//~ t->body = tmp;
+	//~ }
+	return bn_check(t);
 }
 
 int bn_sub_to(bn *t, bn const *right)
@@ -719,11 +834,19 @@ int bn_sub_to(bn *t, bn const *right)
 	bn_neg(t);
 	bn_add_to(t, right);
 	bn_neg(t);
+	
 	return BN_OK;
 }
 
 int bn_mul_to(bn *t, bn const *right)
 {
+	#ifdef DEBUG
+	if (bn_check(t) != BN_OK)
+	{
+		bn_print_error(bn_check(t));
+		assert(0);
+	}
+	#endif
 	#ifdef DEBUG
 	_BN_ASSERT(t);
 	_BN_ASSERT(right);
@@ -745,6 +868,7 @@ int bn_mul_to(bn *t, bn const *right)
 		t->bodysize = right->bodysize;
 		t->amount_of_allocated_blocks = right->amount_of_allocated_blocks;
 		t->sign = sign_result;
+		
 		return BN_OK;
 	}
 	else if (right->body[0] == 1 && right->bodysize == 1)
@@ -757,13 +881,14 @@ int bn_mul_to(bn *t, bn const *right)
 	body_t* mul_result = (body_t* )calloc(amount_of_blocks*DEFAULT_SIZE, sizeof(body_t));
 	if (!mul_result)
 		return BN_NO_MEMORY;
-	
-	
+
 	for (int i = 0; i < right->bodysize; i++)
 	{
 		for (int j = 0; j < t->bodysize; j++)
 		{
 			mul_result[i+j] += t->body[j]*right->body[i];
+			//~ printf("i = %d\n", i);
+			//~ printf("j = %d\n\n", j);
 		}
 	}
 	t->sign = sign_result;
@@ -772,20 +897,24 @@ int bn_mul_to(bn *t, bn const *right)
 	t->amount_of_allocated_blocks = amount_of_blocks;
 	_BN_STABILIZE(t);
 	
+	//~ #ifdef DEBUG
+	//~ printf("t->bodysize:	%d\nallocated:	%d\n\n", t->bodysize, t->amount_of_allocated_blocks*DEFAULT_SIZE);
+	//~ assert(0);
+	//~ #endif
 	
-	if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
-	{
-		t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
-		body_t* tmp = calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
-		if (!tmp)
-			return BN_NO_MEMORY;
-		for (int i = 0; i < t->bodysize; i++)
-			tmp[i] = t->body[i];
-		free(t->body);
-		t->body = tmp;
-	}
+	//~ if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
+	//~ {
+		//~ t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
+		//~ body_t* tmp = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+		//~ if (!tmp)
+			//~ return BN_NO_MEMORY;
+		//~ for (int i = 0; i < t->bodysize; i++)
+			//~ tmp[i] = t->body[i];
+		//~ free(t->body);
+		//~ t->body = tmp;
+	//~ }
 	
-	return BN_OK;
+	return bn_check(t);
 }
 
 int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО ДЕЛЕНИЕ ПРИ ОТРИЦАТЕЛЬНЫЗ ЧИСТАХ НЕ ВСЕГДА РАБАОТЕТ
@@ -806,8 +935,11 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 	int sign_result = t->sign * right->sign;
 	if (right->bodysize > t->bodysize)
 	{
-		bn_delete(t);
-		t = bn_new();
+		free(t->body);
+		t->amount_of_allocated_blocks = 1;
+		t->sign = 0;
+		t->bodysize = 1;
+		t->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
 		if (!t)
 			return BN_NO_MEMORY;
 		return BN_OK;
@@ -827,31 +959,38 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 			return BN_NO_MEMORY;
 		bn_init_int(ten, 10);
 		bn_init_int(one, 1);
-		
 		switch (bn_cmp(abs_t, abs_right))
 		{
 			case -1:
 			{
-				bn_delete(t);
-				t = bn_new();
-				if (!t)
+				free(t->body);
+				t->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
+				if (!t->body)
 					return BN_NO_MEMORY;
-				return BN_OK;
+				t->bodysize = 1;
+				t->sign = 0;
+				t->amount_of_allocated_blocks = 1;
+				
+				break;
 			}
 			case 0:
 			{
-				bn_delete(t);
-				t = bn_init(one);
-				if (!t)
+				free(t->body);
+				t->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
+				if (!t->body)
 					return BN_NO_MEMORY;
+				t->body[0] = 1;
+				t->bodysize = 1;
+				t->amount_of_allocated_blocks = 1;
 				t->sign = sign_result;
-				return BN_OK;
+				break;
 			}
 			case 1:
 			{
 				bn* x = bn_new(); //отсеченная часть
 				if (!x)
 					return BN_NO_MEMORY;
+				free(x->body);
 				x->body = (body_t* )calloc(abs_right->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
 				x->sign = 1;
 				
@@ -891,28 +1030,52 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 					}
 					dynamic_stack_Push(s, digit);
 					
+					//~ printf("x:\n");
+					//~ _GREEN_DUMP(x);
+					//~ printf("premul:\n");
+					//~ _GREEN_DUMP(premul);
 					bn_sub_to(x, premul);
+					//~ _RED_DUMP(x);
 					
 					#ifdef DEBUG
 					if (bn_cmp(x, abs_right) == 1)
 					{
 						printf("РЕЗУЛЬТАТ ВЫЧИТАНИЯ БОЛЬШЕ ДЕЛИТЕЛЯ!\n");
+						_RED_DUMP(x);
+						_GREEN_DUMP(abs_right);
+						printf("premul:\n");
+						_RED_DUMP(premul);
 						assert(0);
 					}
 					#endif
 					
 					
+					
+					bn_delete(premul);
 					if (st->current)
 					{
-						bn_mul_to(x, ten);
-						//~ for (int i = 0; i < x->bodysize; i++)
-							//~ x->body[x->bodysize - i] = x->body[x->bodysize - 1 - i];
-						//~ x->body[0] = 0;
+						//~ bn_mul_to(x, ten);
 						
-						bn* tmp = bn_new();
-						bn_init_int(tmp, dynamic_stack_Pop(st));
-						bn_add_to(x, tmp);
-						bn_delete(tmp);
+						
+						bn_check(x);
+						if (x->sign != 0)
+						{
+							for (int i = 0; i < x->bodysize; i++)
+								x->body[x->bodysize - i] = x->body[x->bodysize - 1 - i];
+							x->body[0] = dynamic_stack_Pop(st);
+							x->bodysize++;
+						}
+						else
+						{
+							x->body[0] = dynamic_stack_Pop(st);
+							x->sign = 1;
+						}
+						bn_check(x);
+						
+						//~ bn* tmp = bn_new();
+						//~ bn_init_int(tmp, dynamic_stack_Pop(st));
+						//~ bn_add_to(x, tmp);
+						//~ bn_delete(tmp);
 					}
 					else
 					{
@@ -920,6 +1083,7 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 						//конец деления
 					}
 				}
+				
 				free(t->body);
 				t->amount_of_allocated_blocks = (int)trunc(s->current / DEFAULT_SIZE) + 1;
 				t->body = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
@@ -948,19 +1112,19 @@ int bn_div_to(bn *t, bn const *right) //ЕСТЬ ПОДОЗРЕНИЯ, ЧТО Д
 	}
 	
 	_BN_STABILIZE(t);
-	if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
-	{
-		t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
-		body_t* tmp = calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
-		if (!tmp)
-			return BN_NO_MEMORY;
-		for (int i = 0; i < t->bodysize; i++)
-			tmp[i] = t->body[i];
-		free(t->body);
-		t->body = tmp;
-	}
+	//~ if ((int)(trunc(t->bodysize / DEFAULT_SIZE) + 1) < t->amount_of_allocated_blocks)
+	//~ {
+		//~ t->amount_of_allocated_blocks = (int)(trunc(t->bodysize / DEFAULT_SIZE) + 1);
+		//~ body_t* tmp = (body_t* )calloc(t->amount_of_allocated_blocks*DEFAULT_SIZE, sizeof(body_t));
+		//~ if (!tmp)
+			//~ return BN_NO_MEMORY;
+		//~ for (int i = 0; i < t->bodysize; i++)
+			//~ tmp[i] = t->body[i];
+		//~ free(t->body);
+		//~ t->body = tmp;
+	//~ }
 	
-	return BN_OK;
+	return bn_check(t);
 };
 
 int bn_mod_to(bn *t, bn const *right)
@@ -975,13 +1139,12 @@ int bn_mod_to(bn *t, bn const *right)
 	bn* tmp = bn_init(t);
 	if (!tmp)
 		return BN_NO_MEMORY;
-	
 	bn_div_to(tmp, right);
 	bn_mul_to(tmp, right);
 	bn_sub_to(t, tmp);
 	
 	bn_delete(tmp);
-	return BN_OK;
+	return bn_check(t);
 }
 
 // Возвести число в степень degree
@@ -1016,6 +1179,7 @@ int bn_pow_to(bn *t, int degree)
 		{
 			bn* t_copy = bn_init(t);
 			bn_mul_to(t, t_copy);
+			bn_delete(t_copy);
 			n /= 2;
 		}
 	}
@@ -1028,7 +1192,8 @@ int bn_pow_to(bn *t, int degree)
 	for (int i = 0; i < result->bodysize; i++) t->body[i]= result->body[i];
 	t->sign = result->sign;
 	bn_delete(result);
-	return BN_OK;
+	
+	return bn_check(t);
 }
 
 
@@ -1037,8 +1202,17 @@ int bn_pow_to(bn *t, int degree)
 // в системе счисления radix
 int bn_init_string_radix(bn *t, const char *init_string, int radix)
 {
-	bn_delete(t);
-	t = bn_new();
+	#ifdef DEBUG
+	_BN_ASSERT(t);
+	#endif
+	if (_NO_BN(t))
+		return BN_NULL_OBJECT;
+	
+	free(t->body);
+	t->body = (body_t* )calloc(DEFAULT_SIZE, sizeof(body_t));
+	t->amount_of_allocated_blocks = 1;
+	t->sign = 0;
+	t->bodysize = 1;
 	//читать посимвольно
 	//опредеить значение каждого символа
 	//прибавить полученное значение инициализируемому числу
@@ -1199,14 +1373,13 @@ const char *bn_to_string(bn const *t, int radix)
 	bn* digit = NULL;
 	
 	bn* p = bn_init(t);
-	
+
 	dynamic_stack* s = dynamic_stack_Construct();
 	
 	int i = 0;
 	while (bn_cmp(p, bn_radix) == 1)
 	{
 		digit = bn_mod(p, bn_radix);
-		
 		int d = 0;
 		int ten = 1;
 		for (int i = 0; i < digit->bodysize; i++)
@@ -1233,6 +1406,9 @@ const char *bn_to_string(bn const *t, int radix)
 		outs[i] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[(int)dynamic_stack_Pop(s)];
 	
 	dynamic_stack_Destroy(s);
+	bn_delete(bn_radix);
+	bn_delete(p);
+	
 	
 	return outs;
 }
@@ -1332,3 +1508,5 @@ int bn_root_to(bn *t, int reciprocal)
 	dynamic_stack_Destroy(s);
 	return BN_OK;
 }
+
+
